@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
       - name: fast-api
-        image: netanelxa/trading-robot:0.0.1
+        image: netanelxa/trading-robot:0.0.3
         ports:
         - containerPort: 80
