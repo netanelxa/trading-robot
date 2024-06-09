@@ -1,0 +1,21 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: sample-rollout
+  labels:
+    app: sample-app 
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: sample-app
+  template:
+    spec:
+      containers:
+      - name: sample-container
+        image: sample-img
+        imagePullPolicy: IfNotPresent
+        envFrom:
+          #- configMapRef:
+          #  name: svc-all
