@@ -2,20 +2,92 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: sample-rollout
+  name: sample
   labels:
-    app: sample-app 
+    app: sample
 spec:
-  replicas: 6
+  replicas: 1
   selector:
     matchLabels:
-      app: sample-app
+      app: sample
   template:
+    metadata:
+      labels:
+        app: sample
+        app.kubernetes.io/name: sample
+      annotations:
+        sidecar.istio.io/proxyCPU: "100m"
+        sidecar.istio.io/proxyCPULimit: "32000m"
+        sidecar.istio.io/proxyMemoryLimit: "500Mi"
+        sidecar.istio.io/proxyMemory: "100Mi"
+        proxy.istio.io/config: |
+          concurrency: 16
+          tracing:
+            sampling: 0
+            zipkin:
+              address: jaeger-collector.jaeger:9411
+        kubectl.kubernetes.io/default-container: sample
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: sample
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - authenticator
+                topologyKey: kubernetes.io/hostname
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 65532 # nonroot user
       containers:
-      - name: sample-container
-        image: sample-img
+      - name: sample
+        image: sample
         imagePullPolicy: IfNotPresent
+#        resources:
+#          limits:
+#            cpu: 5
+#          requests:
+#            cpu: 5
+        env:
+          - name: GOMAXPROCS
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.cpu
         envFrom:
-          #- configMapRef:
-          #  name: svc-all
+        - configMapRef:
+            name: svc-all
+        readinessProbe:
+          initialDelaySeconds: 3
+          periodSeconds: 10 # Pooling interval. Default value.
+          timeoutSeconds: 1 # Request timeout. Default value.
+          grpc:
+            port: 6705
+      serviceAccountName: sample
+  strategy:
+    canary:
+      canaryService: sample-canary
+      stableService: sample
+#      trafficRouting:
+#        istio:
+#          virtualService:
+#            name: sample
+#            routes:
+#            - primary
+      maxSurge: "100%"
+      maxUnavailable: 0
+      steps:
+        - setWeight: 100
+        - pause:
+            duration: 0s
