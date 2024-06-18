@@ -1,4 +1,5 @@
 # -*- mode: Python -*-
+# vi:si:et:sw=2:sts=2:ts=2
 
 local_resource(
   'sample-bin',
