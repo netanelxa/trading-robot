@@ -11,3 +11,8 @@ what you need to start developing locally:
 
 
 make tilt
+
+
+
+k config use-context kind-trader-cluster
+ctlptl get -o json | jq -r '.items[] | select(.registry == "ctlptl-registry") | .status.localRegistryHosting.host'

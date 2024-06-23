@@ -4,7 +4,8 @@ kind:
 
 .PHONY: tilt
 tilt: kind
-	tilt up all -f Tiltfile --port 9999
+	export REGISTRY=$$(ctlptl get -o json | jq -r '.items[] | select(.registry == "ctlptl-registry") | .status.localRegistryHosting.host') && echo $$REGISTRY
+	tilt up --port 9999
 
 .PHONY: check
 check:
