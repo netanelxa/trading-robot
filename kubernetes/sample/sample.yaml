@@ -46,7 +46,6 @@ spec:
                       values:
                         - authenticator
                 topologyKey: kubernetes.io/hostname
-                topologyKey: kubernetes.io/hostname
               weight: 100
       securityContext:
         runAsNonRoot: false
