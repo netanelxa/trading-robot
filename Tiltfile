@@ -17,9 +17,8 @@ local_resource(
 )
 
 docker_build(
-    "sample",   #// tag for image
-    "./sample", # // context? dir?
-    #dockerfile = 'Dockerfile' # // this is the default dockerfile name can be removed
+    "sample",   # will build this docker imagename
+    "./sample", # will look for dockerfile in this dir
 )
 
 #^^ this should build image names "sample"
