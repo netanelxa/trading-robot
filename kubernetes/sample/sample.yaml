@@ -18,4 +18,4 @@ spec:
       - name: sample
         image: sample
         ports:
-        - containerPort: 80
+        - containerPort: 5000
