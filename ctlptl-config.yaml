@@ -1,0 +1,46 @@
+---
+apiVersion: ctlptl.dev/v1alpha1
+kind: Cluster
+product: kind
+registry: ctlptl-registry
+kindV1Alpha4Cluster:
+  name: trader-cluster
+  networking:
+    disableDefaultCNI: true
+  nodes:
+    - role: control-plane
+      image: kindest/node:v1.27.3@sha256:3966ac761ae0136263ffdb6cfd4db23ef8a83cba8a463690e98317add2c9ba72
+      kubeadmConfigPatches:
+        - |
+          kind: ClusterConfiguration
+          apiServer:
+            timeoutForControlPlane: 30s
+            extraArgs:
+              request-timeout: 31s
+              min-request-timeout: "30"
+              http2-max-streams-per-connection: "0"
+              max-requests-inflight: "90000"
+              max-mutating-requests-inflight: "30000"
+    - role: worker
+      image: kindest/node:v1.27.3@sha256:3966ac761ae0136263ffdb6cfd4db23ef8a83cba8a463690e98317add2c9ba72
+    - role: worker
+      image: kindest/node:v1.27.3@sha256:3966ac761ae0136263ffdb6cfd4db23ef8a83cba8a463690e98317add2c9ba72
+    - role: worker
+      image: kindest/node:v1.27.3@sha256:3966ac761ae0136263ffdb6cfd4db23ef8a83cba8a463690e98317add2c9ba72
+      kubeadmConfigPatches:
+        - |
+          kind: InitConfiguration
+          nodeRegistration:
+            kubeletExtraArgs:
+              node-labels: "ingress-ready=true"
+      extraPortMappings:
+        - containerPort: 42080
+          hostPort: 42080
+          protocol: TCP
+        - containerPort: 42443
+          hostPort: 42443
+          protocol: TCP
+  containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.configs."linode-docker.artifactory.linode.com".tls]
+      ca_file = "/usr/local/share/ca-certificates/artifactory-cas.crt"
