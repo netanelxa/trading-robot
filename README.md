@@ -25,9 +25,12 @@ k get nodes -A # are not ready
 #try getting the error with:
 k describe nodes -A
 
-if it gives cni plugin not initialized"
+3. if it gives cni plugin not initialized"
 # this removes all images beware:
 https://stackoverflow.com/questions/69552636/cannot-launch-docker-desktop-for-mac
+
+4.
+In the Docker For Mac preferences, click Enable Kubernetes
 
 
 
