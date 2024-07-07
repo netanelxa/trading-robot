@@ -29,6 +29,7 @@ k8s_yaml(sampleYaml)
 k8s_resource(
   workload='sample',
   labels=['microservice-grp-A'],
+  port_forwards=5000,
   resource_deps = [
     'sample-bin',
   ]

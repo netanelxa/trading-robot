@@ -32,7 +32,8 @@ https://stackoverflow.com/questions/69552636/cannot-launch-docker-desktop-for-ma
 4.
 In the Docker For Mac preferences, click Enable Kubernetes
 
-
+5.
+installed https://github.com/kubernetes-sigs/cri-tools
 
 k config use-context kind-trader-cluster
 ctlptl get -o json | jq -r '.items[] | select(.registry == "ctlptl-registry") | .status.localRegistryHosting.host'
