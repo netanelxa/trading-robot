@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Tracked Stocks - Stock Tracker{% endblock %}
+
+{% block additional_styles %}
+ul.stock-list {
+    list-style-type: none;
+    padding: 0;
+}
+ul.stock-list li {
+    background: #fff;
+    margin-bottom: 5px;
+    padding: 10px;
+    border-radius: 3px;
+}
+{% endblock %}
+
+{% block content %}
+<h1>Tracked Stocks</h1>
+{% if stocks %}
+    <ul class="stock-list">
+        {% for stock in stocks %}
+        <li>{{ stock }}</li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>No stocks are currently being tracked. Use the "Add a Stock to Track" option to add stocks.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Add Stock - Stock Tracker{% endblock %}
+
+{% block additional_styles %}
+form {
+    background: #fff;
+    padding: 20px;
+    border-radius: 5px;
+    max-width: 400px;
+}
+label {
+    display: block;
+    margin-bottom: 5px;
+}
+input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+input[type="submit"] {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    background: #50b3a2;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+input[type="submit"]:hover {
+    background: #3a8279;
+}
+.message {
+    margin-top: 20px;
+    padding: 10px;
+    background: #e3e3e3;
+    border-radius: 3px;
+}
+{% endblock %}
+
+{% block content %}
+<h1>Add Stock to Track</h1>
+<form action="{{ url_for('add_stock') }}" method="post">
+    <label for="symbol">Stock Symbol:</label>
+    <input type="text" id="symbol" name="symbol" required>
+    <input type="submit" value="Add Stock">
+</form>
+{% if message %}
+<div class="message">
+    {{ message }}
+</div>
+{% endif %}
+{% endblock %}
