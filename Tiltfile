@@ -1,8 +1,12 @@
+load('ext://dotenv', 'dotenv')
+dotenv()
 # -*- mode: Python -*-
 # vi:si:et:sw=2:sts=2:ts=2
 
 # install argo
 local('echo local')
+
+
 
 #######################
 # Install sample app: #
@@ -21,9 +25,12 @@ docker_build(
     "./sample", # will look for dockerfile in this dir
 )
 
+
 #^^ this should build image names "sample"
 sampleYaml=kustomize('kubernetes/sample')
 k8s_yaml(sampleYaml)
+
+
 
 #^^ this should become a pod:
 k8s_resource(
@@ -34,4 +41,3 @@ k8s_resource(
     'sample-bin',
   ]
 )
-

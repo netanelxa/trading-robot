@@ -1,29 +1,76 @@
 {% extends "base.html" %}
-
 {% block title %}Tracked Stocks - Stock Tracker{% endblock %}
 
 {% block additional_styles %}
-ul.stock-list {
-    list-style-type: none;
-    padding: 0;
-}
-ul.stock-list li {
-    background: #fff;
-    margin-bottom: 5px;
-    padding: 10px;
-    border-radius: 3px;
-}
+<style>
+    .stocks-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    .stocks-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+        background-color: #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .stocks-table th, .stocks-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    .stocks-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    .stocks-table tr:hover {
+        background-color: #f5f5f5;
+    }
+    .view-details {
+        display: inline-block;
+        padding: 6px 12px;
+        background-color: #4CAF50;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        transition: background-color 0.3s;
+    }
+    .view-details:hover {
+        background-color: #45a049;
+    }
+    .no-stocks {
+        text-align: center;
+        color: #666;
+        margin-top: 20px;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-<h1>Tracked Stocks</h1>
-{% if stocks %}
-    <ul class="stock-list">
-        {% for stock in stocks %}
-        <li>{{ stock }}</li>
-        {% endfor %}
-    </ul>
-{% else %}
-    <p>No stocks are currently being tracked. Use the "Add a Stock to Track" option to add stocks.</p>
-{% endif %}
+<div class="stocks-container">
+    <h1>Tracked Stocks</h1>
+    {% if stocks %}
+        <table class="stocks-table">
+            <thead>
+                <tr>
+                    <th>Stock Symbol</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stock in stocks %}
+                <tr>
+                    <td>{{ stock }}</td>
+                    <td>
+                        <a href="{{ url_for('stock_detail', symbol=stock) }}" class="view-details">View Details</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="no-stocks">No stocks are currently being tracked. Use the "Add a Stock to Track" option to add stocks.</p>
+    {% endif %}
+</div>
 {% endblock %}

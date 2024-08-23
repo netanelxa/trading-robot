@@ -28,6 +28,17 @@ spec:
           value: "production"
         - name: PORT
           value: "5000"
+        - name: APCA_API_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: api-key-id
+        - name: APCA_API_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: api-secret-key
+
 ---
 apiVersion: v1
 kind: Service
