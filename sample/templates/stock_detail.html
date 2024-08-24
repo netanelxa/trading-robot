@@ -106,10 +106,10 @@
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: data.map(item => item.date),
+                labels: data.map(item => item.date).reverse(),
                 datasets: [{
                     label: '{{ symbol }} Closing Price',
-                    data: data.map(item => item.close),
+                    data: data.map(item => item.close).reverse(),
                     borderColor: 'rgb(75, 192, 192)',
                     tension: 0.1
                 }]
@@ -134,7 +134,7 @@
         // Update table
         var tableBody = document.getElementById('priceTable');
         tableBody.innerHTML = '';
-        chartData[period].slice().reverse().forEach(item => {
+        chartData[period].forEach(item => {
             var row = `<tr><td>${item.date}</td><td>$${item.close.toFixed(2)}</td></tr>`;
             tableBody.innerHTML += row;
         });

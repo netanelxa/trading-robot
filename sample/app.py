@@ -5,7 +5,7 @@ from redis import Redis
 from fakeredis import FakeRedis
 from alpaca_trade_api.rest import REST, TimeFrame
 from datetime import datetime, timedelta
-
+import json
 
 app = Flask(__name__)
 
@@ -45,7 +45,14 @@ def list_stocks():
     stocks = redis.smembers('stocks')
     return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
 
-
+def get_cached_data(key, fetch_func, expiry=3600):
+    cached_data = redis.get(key)
+    if cached_data:
+        return json.loads(cached_data)
+    else:
+        data = fetch_func()
+        redis.setex(key, expiry, json.dumps(data))
+        return data
 
 @app.route('/stock/<symbol>')
 def stock_detail(symbol):
@@ -54,25 +61,30 @@ def stock_detail(symbol):
     start_date_3m = end_date - timedelta(days=90)
     start_date_1y = end_date - timedelta(days=365)
 
-    # Fetch historical data
-    def get_data(start_date):
-        data = api.get_bars(
-            symbol, 
-            TimeFrame.Day, 
-            start_date.isoformat(), 
-            end_date.isoformat(),
-            adjustment='raw'
-        ).df
-        time.sleep(0.2)  # Sleep for 200ms to avoid hitting rate limits
-        return data
+    # Fetch historical data with caching
+    def fetch_historical_data(start_date):
+        def fetch_func():
+            data = api.get_bars(
+                symbol, 
+                TimeFrame.Day, 
+                start_date.isoformat(), 
+                end_date.isoformat(),
+                adjustment='raw'
+            ).df
+            # Convert DataFrame to a dictionary with date strings as keys
+            return {date.strftime('%Y-%m-%d'): row.to_dict() for date, row in data.iterrows()}
+        
+        cache_key = f"{symbol}_historical_{start_date.isoformat()}_{end_date.isoformat()}"
+        return get_cached_data(cache_key, fetch_func, expiry=24*3600)  # Cache for 24 hours
 
-    data_1m = get_data(start_date_1m)
-    data_3m = get_data(start_date_3m)
-    data_1y = get_data(start_date_1y)
+    data_1m = fetch_historical_data(start_date_1m)
+    data_3m = fetch_historical_data(start_date_3m)
+    data_1y = fetch_historical_data(start_date_1y)
 
-    def process_data(df):
-        return [{'date': date.strftime('%Y-%m-%d'), 'close': close} 
-                for date, close in zip(df.index, df['close'])]
+    def process_data(data_dict):
+        sorted_data = sorted(data_dict.items(), key=lambda x: x[0], reverse=True)
+        return [{'date': date, 'close': item['close']} for date, item in sorted_data]
+
 
     data = {
         '1M': process_data(data_1m),
@@ -80,28 +92,38 @@ def stock_detail(symbol):
         '1Y': process_data(data_1y)
     }
 
-    # Get latest available price and calculate metrics
-    latest_trade = api.get_latest_trade(symbol)
-    current_price = latest_trade.price
+    # Get latest available price with caching
+    def fetch_latest_price():
+        latest_trade = api.get_latest_trade(symbol)
+        return latest_trade.price
+
+    current_price = get_cached_data(f"{symbol}_latest_price", fetch_latest_price, expiry=300)  # Cache for 5 minutes
 
     # Calculate metrics
-    high_52week = data_1y['high'].max()
-    low_52week = data_1y['low'].min()
-    ma_50 = data_3m['close'].tail(50).mean()
-    ma_200 = data_1y['close'].tail(200).mean()
+    high_52week = max(item['high'] for item in data_1y.values())
+    low_52week = min(item['low'] for item in data_1y.values())
+    
+    # Calculate moving averages
+    closing_prices = [item['close'] for item in reversed(data['1Y'])]  # Reverse to get chronological order
+    ma_50 = sum(closing_prices[-50:]) / 50 if len(closing_prices) >= 50 else None
+    ma_200 = sum(closing_prices[-200:]) / 200 if len(closing_prices) >= 200 else None
     
     # Calculate percent change
-    prev_close = data_1y.iloc[-2]['close']
+    prev_close = data['1Y'][1]['close']  # Second item is the previous day's close
     percent_change = ((current_price - prev_close) / prev_close) * 100
 
-    # Fetch news
-    news = api.get_news(symbol, limit=5)
-    news_data = [{
-        'headline': item.headline,
-        'summary': item.summary,
-        'article_url': item.url,
-        'published_at': item.created_at.strftime('%Y-%m-%d %H:%M:%S')
-    } for item in news]
+
+    # Fetch news with caching
+    def fetch_news():
+        news = api.get_news(symbol, limit=5)
+        return [{
+            'headline': item.headline,
+            'summary': item.summary,
+            'article_url': item.url,
+            'published_at': item.created_at.isoformat()
+        } for item in news]
+
+    news_data = get_cached_data(f"{symbol}_news", fetch_news, expiry=1800)  # Cache for 30 minutes
 
     return render_template('stock_detail.html', 
                            symbol=symbol, 
@@ -114,7 +136,6 @@ def stock_detail(symbol):
                            ma_200=ma_200,
                            percent_change=percent_change,
                            news=news_data)
-
 
 
 # Debug function to check API connection
