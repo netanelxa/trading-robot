@@ -1,49 +1,41 @@
 load('ext://dotenv', 'dotenv')
 dotenv()
-# -*- mode: Python -*-
-# vi:si:et:sw=2:sts=2:ts=2
 
-# install argo
+# Install argo
 local('echo local')
 
-
-
-#######################
-# Install sample app: #
-#######################
+# Build and watch the trading robot application
 local_resource(
-  'sample-bin',
-  'echo running sample-bin',
+  'trading-robot-bin',
+  'echo running trading-robot-bin',
   deps=[
-    './sample' # will watch changed files here
+    './sample'  # Assuming your app code is still in the 'sample' directory
   ],
   labels=['build-stuff']
 )
 
+# Build the Docker image
 docker_build(
-    "sample",   # will build this docker imagename
-    "./sample", # will look for dockerfile in this dir
+    "netanelxa/trading-robot:latest",
+    "./sample",  # Dockerfile location
 )
 
-# Create and manage the Alpaca secrets using local_resource
+# Create and manage the Alpaca secrets
 local_resource(
   'create-alpaca-secrets',
   cmd='kubectl create secret generic alpaca-secrets --from-literal=api-key-id=$APCA_API_KEY_ID --from-literal=api-secret-key=$APCA_API_SECRET_KEY --dry-run=client -o yaml | kubectl apply -f -',
-  deps=['.env']  # This will re-run if your .env file changes
+  deps=['.env']
 )
 
-#^^ this should build image names "sample"
-sampleYaml=kustomize('kubernetes/sample')
-k8s_yaml(sampleYaml)
+# Apply Kubernetes configurations
+k8s_yaml(kustomize('kubernetes/sample'))
 
-
-
-#^^ this should become a pod:
+# Define the Kubernetes resource
 k8s_resource(
-  workload='sample',
-  labels=['microservice-grp-A'],
+  workload='trading-robot',  # Updated to match the new deployment name
+  labels=['trading-robot'],
   port_forwards=5000,
-  resource_deps = [
-    'sample-bin',
+  resource_deps=[
+    'trading-robot-bin',
   ]
 )

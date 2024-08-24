@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sample
+  name: trading-robot
   labels:
-    app: sample
+    app: trading-robot
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sample
+      app: trading-robot
   template:
     metadata:
       labels:
-        app: sample
+        app: trading-robot
     spec:
       containers:
-      - name: sample
-        image: sample
+      - name: trading-robot
+        image: netanelxa/trading-robot:latest
         ports:
         - containerPort: 5000
         env:
@@ -38,16 +38,24 @@ spec:
             secretKeyRef:
               name: alpaca-secrets
               key: api-secret-key
-
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: sample
+  name: trading-robot
+  annotations:
+    service.beta.kubernetes.io/linode-loadbalancer-throttle: "4"
 spec:
-  type: NodePort  # or LoadBalancer if you have that option
-  selector:
-    app: sample
+  type: LoadBalancer
   ports:
-  - port: 80
-    targetPort: 5000
+    - port: 80
+      targetPort: 5000
+  selector:
+    app: trading-robot
