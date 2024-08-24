@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Flask, render_template, request,current_app, flash,redirect, url_for
 from redis import Redis
 from fakeredis import FakeRedis
@@ -44,53 +45,76 @@ def list_stocks():
     stocks = redis.smembers('stocks')
     return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
 
-def get_stock_data(symbol):
-    try:
-        print(f"Attempting to fetch data for {symbol}")
-        end_date = datetime.now().date() - timedelta(days=1)  # Yesterday
-        start_date = end_date - timedelta(days=30)
-        
-        # Format dates as strings in YYYY-MM-DD format
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        end_date_str = end_date.strftime('%Y-%m-%d')
-        
-        print(f"Date range: {start_date_str} to {end_date_str}")
 
-        bars = api.get_bars(symbol, TimeFrame.Day, start=start_date_str, end=end_date_str).df
-        print(f"Retrieved {len(bars)} bars of data")
-
-        # Convert to list of dictionaries and sort by date (most recent first)
-        data = [
-            {
-                'date': index.strftime('%Y-%m-%d'),
-                'close': row['close']
-            }
-            for index, row in bars.iterrows()
-        ]
-        data.sort(key=lambda x: x['date'], reverse=True)
-        
-        print(f"Processed and sorted {len(data)} data points")
-
-        return data
-    except Exception as e:
-        print(f"Error fetching data for {symbol}: {str(e)}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error args: {e.args}")
-        return None
 
 @app.route('/stock/<symbol>')
 def stock_detail(symbol):
-    current_app.logger.info(f"Entering stock_detail function for symbol: {symbol}")
-    try:
-        stock_data = get_stock_data(symbol)
-        current_app.logger.info(f"Stock data retrieved: {stock_data}")
-        if not stock_data:
-            current_app.logger.warning(f"No stock data found for {symbol}")
-            return render_template('error.html', message=f"Unable to fetch data for {symbol}"), 400
-        return render_template('stock_detail.html', symbol=symbol, data=stock_data)
-    except Exception as e:
-        current_app.logger.error(f"Error in stock_detail: {str(e)}", exc_info=True)
-        return render_template('error.html', message=f"An error occurred: {str(e)}"), 500
+    end_date = datetime.now().date() - timedelta(days=1)  # Yesterday
+    start_date_1m = end_date - timedelta(days=30)
+    start_date_3m = end_date - timedelta(days=90)
+    start_date_1y = end_date - timedelta(days=365)
+
+    # Fetch historical data
+    def get_data(start_date):
+        data = api.get_bars(
+            symbol, 
+            TimeFrame.Day, 
+            start_date.isoformat(), 
+            end_date.isoformat(),
+            adjustment='raw'
+        ).df
+        time.sleep(0.2)  # Sleep for 200ms to avoid hitting rate limits
+        return data
+
+    data_1m = get_data(start_date_1m)
+    data_3m = get_data(start_date_3m)
+    data_1y = get_data(start_date_1y)
+
+    def process_data(df):
+        return [{'date': date.strftime('%Y-%m-%d'), 'close': close} 
+                for date, close in zip(df.index, df['close'])]
+
+    data = {
+        '1M': process_data(data_1m),
+        '3M': process_data(data_3m),
+        '1Y': process_data(data_1y)
+    }
+
+    # Get latest available price and calculate metrics
+    latest_trade = api.get_latest_trade(symbol)
+    current_price = latest_trade.price
+
+    # Calculate metrics
+    high_52week = data_1y['high'].max()
+    low_52week = data_1y['low'].min()
+    ma_50 = data_3m['close'].tail(50).mean()
+    ma_200 = data_1y['close'].tail(200).mean()
+    
+    # Calculate percent change
+    prev_close = data_1y.iloc[-2]['close']
+    percent_change = ((current_price - prev_close) / prev_close) * 100
+
+    # Fetch news
+    news = api.get_news(symbol, limit=5)
+    news_data = [{
+        'headline': item.headline,
+        'summary': item.summary,
+        'article_url': item.url,
+        'published_at': item.created_at.strftime('%Y-%m-%d %H:%M:%S')
+    } for item in news]
+
+    return render_template('stock_detail.html', 
+                           symbol=symbol, 
+                           data=data, 
+                           current_price=current_price,
+                           end_date=end_date,
+                           high_52week=high_52week,
+                           low_52week=low_52week,
+                           ma_50=ma_50,
+                           ma_200=ma_200,
+                           percent_change=percent_change,
+                           news=news_data)
+
 
 
 # Debug function to check API connection
