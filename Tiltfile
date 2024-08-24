@@ -25,6 +25,12 @@ docker_build(
     "./sample", # will look for dockerfile in this dir
 )
 
+# Create and manage the Alpaca secrets using local_resource
+local_resource(
+  'create-alpaca-secrets',
+  cmd='kubectl create secret generic alpaca-secrets --from-literal=api-key-id=$APCA_API_KEY_ID --from-literal=api-secret-key=$APCA_API_SECRET_KEY --dry-run=client -o yaml | kubectl apply -f -',
+  deps=['.env']  # This will re-run if your .env file changes
+)
 
 #^^ this should build image names "sample"
 sampleYaml=kustomize('kubernetes/sample')
