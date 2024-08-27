@@ -12,7 +12,7 @@ kick off dev cluster:
 make tilt
 ```
 
-# Apaca:
+# Alpaca:
 
 you need a free acount in https://app.alpaca.markets/signup for us to fetch market data. add your api keys to .env files (see expected format in .env_example)
 
