@@ -38,5 +38,5 @@ k8s_resource(
   port_forwards=5000,
   resource_deps=[
     'trading-robot-bin',
-  ]
+  ],
 )

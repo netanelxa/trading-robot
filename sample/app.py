@@ -8,9 +8,13 @@ from alpaca_trade_api.rest import REST, TimeFrame
 from datetime import datetime, timedelta
 from trade_recommendations import get_trade_recommendation
 import json
+from opentelemetry import trace
+import inspect
 
 app = Flask(__name__)
 app.jinja_env.filters['tojson'] = json.dumps
+serviceName = "web-ui"
+tracer = trace.get_tracer(serviceName + ".tracer")
 
 # Use FakeRedis for local development
 if os.environ.get('FLASK_ENV') == 'development':
@@ -29,10 +33,12 @@ api = REST(key_id=os.environ.get('APCA_API_KEY_ID'),  # Corrected env var name
 
 @app.route('/')
 def index():
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     return render_template('index.html')
 
 @app.route('/add-stock', methods=['GET', 'POST'])
 def add_stock():
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     message = None
     if request.method == 'POST':
         symbol = request.form['symbol'].upper()
@@ -45,6 +51,7 @@ def add_stock():
 
 @app.route('/stocks')
 def list_stocks():
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     stocks = redis.smembers('stocks')
     return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
 
@@ -89,6 +96,7 @@ def get_cached_data(key, fetch_func, expiry=3600):
 
 @app.route('/stock/<symbol>')
 def stock_detail(symbol):
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     end_date = datetime.now().date() - timedelta(days=1)  # Yesterday
     start_date_1y = end_date - timedelta(days=365)
     historical_data = fetch_historical_data(symbol, start_date_1y, end_date)
