@@ -1,17 +1,16 @@
-FROM  alpine:3.8
-    
-RUN   mkdir  /var/flasksite
+FROM python:3.9-slim
 
-COPY  .  /var/flasksite/
+RUN mkdir /var/flasksite
 
-WORKDIR  /var/flasksite/
+COPY . /var/flasksite/
 
-RUN apk add python3 
+WORKDIR /var/flasksite/
 
-RUN  pip3 install  -r requirements.txt 
+RUN pip3 install -r requirements.txt
 
 EXPOSE 5000
 
-ENTRYPOINT [ "python3" ]
+ENV FLASK_APP=app.py
+ENV FLASK_RUN_HOST=0.0.0.0
 
-CMD [ "app.py" ]
+CMD ["flask", "run"]

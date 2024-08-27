@@ -1,21 +1,61 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sample
+  name: trading-robot
   labels:
-    app: sample
+    app: trading-robot
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sample
+      app: trading-robot
   template:
     metadata:
       labels:
-        app: sample
+        app: trading-robot
     spec:
       containers:
-      - name: sample
-        image: sample
+      - name: trading-robot
+        image: netanelxa/trading-robot:latest
         ports:
         - containerPort: 5000
+        env:
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: FLASK_ENV
+          value: "production"
+        - name: PORT
+          value: "5000"
+        - name: APCA_API_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: api-key-id
+        - name: APCA_API_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: api-secret-key
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trading-robot
+  annotations:
+    service.beta.kubernetes.io/linode-loadbalancer-throttle: "4"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 5000
+  selector:
+    app: trading-robot

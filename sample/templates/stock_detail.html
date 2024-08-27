@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}{{ symbol }} Stock Details{% endblock %}
+{% block additional_styles %}
+<style>
+    .stock-info { margin-bottom: 20px; }
+    .chart-container { margin-bottom: 20px; }
+    .time-period-selector { margin-bottom: 10px; }
+    .metrics-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .metrics-table th, .metrics-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .metrics-table th { background-color: #f2f2f2; }
+    .price-table { width: 100%; border-collapse: collapse; }
+    .price-table th, .price-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .price-table th { background-color: #f2f2f2; }
+    .data-note { font-style: italic; color: #666; margin-top: 20px; }
+    .news-section { margin-top: 20px; }
+    .news-item { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+    .news-headline { font-weight: bold; }
+    .news-summary { font-style: italic; color: #666; }
+    .news-date { font-size: 0.9em; color: #888; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>{{ symbol }} Stock Details</h1>
+
+<table class="metrics-table">
+    <tr>
+        <th>Current Price</th>
+        <td>${{ "{:.2f}".format(current_price) }}</td>
+        <th>Percent Change</th>
+        <td>{{ "{:.2f}%".format(percent_change) }}</td>
+    </tr>
+    <tr>
+        <th>52-Week High</th>
+        <td>${{ "{:.2f}".format(high_52week) }}</td>
+        <th>52-Week Low</th>
+        <td>${{ "{:.2f}".format(low_52week) }}</td>
+    </tr>
+    <tr>
+        <th>50-Day MA</th>
+        <td>${{ "{:.2f}".format(ma_50) }}</td>
+        <th>200-Day MA</th>
+        <td>${{ "{:.2f}".format(ma_200) }}</td>
+    </tr>
+</table>
+
+
+<div class="recommendation-section">
+    <h2>Trade Recommendation</h2>
+    <p><strong>Recommendation:</strong> {{ recommendation.recommendation }}</p>
+    <h3>Reasons:</h3>
+    <ul>
+    {% for reason in recommendation.reasons %}
+        <li>{{ reason }}</li>
+    {% endfor %}
+    </ul>
+</div>
+
+
+<div class="chart-container">
+    <div class="time-period-selector">
+        <button>1M</button>
+        <button>3M</button>
+        <button>1Y</button>
+    </div>
+    <canvas id="stockChart" width="400" height="200"></canvas>
+</div>
+
+<h2>Historical Prices</h2>
+<table id="historical-data" class="price-table">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Open</th>
+            <th>High</th>
+            <th>Low</th>
+            <th>Close</th>
+            <th>Volume</th>
+            <th>VWAP</th>
+        </tr>
+    </thead>
+    <tbody id="priceTable">
+        {% for item in data['1M'] %}
+        <tr>
+            <td>{{ item.date }}</td>
+            <td>${{ "{:.2f}".format(item.open) }}</td>
+            <td>${{ "{:.2f}".format(item.high) }}</td>
+            <td>${{ "{:.2f}".format(item.low) }}</td>
+            <td>${{ "{:.2f}".format(item.close) }}</td>
+            <td>{{ "{:,}".format(item.volume) }}</td>
+            <td>${{ "{:.2f}".format(item.vwap) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="news-section">
+    <h2>Latest News</h2>
+    {% for item in news %}
+    <div class="news-item">
+        <div class="news-headline"><a href="{{ item.article_url }}" target="_blank">{{ item.headline }}</a></div>
+        <div class="news-summary">{{ item.summary }}</div>
+        <div class="news-date">{{ item.published_at }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="data-note">
+    Note: Due to free plan limitations, data is delayed by one trading day. Last available data: {{ end_date }}
+</div>
+
+<script>
+    var chartData = {{ data|tojson|safe }};
+    var ctx = document.getElementById('stockChart').getContext('2d');
+    var myChart;
+
+    function loadChartJs(src) {
+        return new Promise(function(resolve, reject) {
+            var script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    function createChart(period) {
+        var data = chartData[period];
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(item => item.date).reverse(),
+                datasets: [{
+                    label: '{{ symbol }} Closing Price',
+                    data: data.map(item => item.close).reverse(),
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false
+                    }
+                }
+            }
+        });
+    }
+
+    function updateChart(period) {
+        if (myChart) {
+            myChart.destroy();
+        }
+        createChart(period);
+
+        // Update table
+        var tableBody = document.getElementById('priceTable');
+        tableBody.innerHTML = '';
+        chartData[period].forEach(item => {
+            var row = `
+                <tr>
+                    <td>${item.date}</td>
+                    <td>$${item.open.toFixed(2)}</td>
+                    <td>$${item.high.toFixed(2)}</td>
+                    <td>$${item.low.toFixed(2)}</td>
+                    <td>$${item.close.toFixed(2)}</td>
+                    <td>${item.volume.toLocaleString()}</td>
+                    <td>$${item.vwap.toFixed(2)}</td>
+                </tr>
+            `;
+            tableBody.innerHTML += row;
+        });
+    }
+
+    // Load Chart.js and initialize the chart
+    loadChartJs('https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js')
+        .then(function() {
+            createChart('1M');  // Initial chart
+            // Add click event listeners to buttons after Chart.js is loaded
+            document.querySelectorAll('.time-period-selector button').forEach(button => {
+                button.addEventListener('click', function() {
+                    updateChart(this.textContent.trim());
+                });
+            });
+        })
+        .catch(function(error) {
+            console.error('Failed to load Chart.js', error);
+        });
+</script>
+{% endblock %}
