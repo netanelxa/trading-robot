@@ -1,20 +1,28 @@
 # trading-robot
 
 what you need to start developing locally:
-1. tilt
-2. ctlptl - https://github.com/tilt-l
-    to get artifactory host-port
-    ctlptl get -o json | jq -r '.items[] | select(.registry == "ctlptl-registry") | .status.localRegistryHosting.host'
-3. kind
-4. kubectl
-5. kustomize
+- ctlptl
+- tilt
+- kind
+- kubectl
+- kustomize
 
-
+kick off dev cluster:
+```
 make tilt
+```
 
 # Apaca:
 
-you need a free acount in https://app.alpaca.markets/signup for us to fetch market data from 
+you need a free acount in https://app.alpaca.markets/signup for us to fetch market data. add your api keys to .env files (see expected format in .env_example)
+
+# Redis:
+
+to get your image onto dev clusters's registry use:
+```
+docker pull redis:6.2-alpine 
+kind load docker-image  redis:6.2-alpine -n trader-cluster
+```
 
 # trubleshoot:
 ```
