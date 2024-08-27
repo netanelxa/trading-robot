@@ -1,4 +1,3 @@
 resources:
   - sample.yaml
   - redis-deployment.yaml
-  - secret.yaml

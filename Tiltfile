@@ -18,6 +18,7 @@ local_resource(
 docker_build(
     "netanelxa/trading-robot:latest",
     "./sample",  # Dockerfile location
+    network='host'
 )
 
 # Create and manage the Alpaca secrets
