@@ -1,13 +1,16 @@
 import os
 import time
-from flask import Flask, render_template, request,current_app, flash,redirect, url_for
+import pandas as pd
+from flask import Flask, render_template, request,json, current_app, flash,redirect, url_for
 from redis import Redis
 from fakeredis import FakeRedis
 from alpaca_trade_api.rest import REST, TimeFrame
 from datetime import datetime, timedelta
+from trade_recommendations import get_trade_recommendation
 import json
 
 app = Flask(__name__)
+app.jinja_env.filters['tojson'] = json.dumps
 
 # Use FakeRedis for local development
 if os.environ.get('FLASK_ENV') == 'development':
@@ -45,6 +48,34 @@ def list_stocks():
     stocks = redis.smembers('stocks')
     return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
 
+
+def fetch_historical_data(symbol, start_date, end_date):
+    def fetch_func():
+        # Fetch historical bars
+        bars = api.get_bars(
+            symbol, 
+            TimeFrame.Day, 
+            start_date.isoformat(), 
+            end_date.isoformat(),
+            adjustment='raw'
+        ).df
+
+        # Convert the DataFrame to a dictionary, converting Timestamp index to string
+        historical_data = {date.strftime('%Y-%m-%d'): {
+            'open': row['open'],
+            'high': row['high'],
+            'low': row['low'],
+            'close': row['close'],
+            'volume': row['volume'],
+            'trade_count': row['trade_count'],
+            'vwap': row['vwap']
+        } for date, row in bars.iterrows()}
+
+        return historical_data
+
+    cache_key = f"{symbol}_historical_{start_date.isoformat()}_{end_date.isoformat()}"
+    return get_cached_data(cache_key, fetch_func, expiry=24*3600)  # Cache for 24 hours
+
 def get_cached_data(key, fetch_func, expiry=3600):
     cached_data = redis.get(key)
     if cached_data:
@@ -54,44 +85,33 @@ def get_cached_data(key, fetch_func, expiry=3600):
         redis.setex(key, expiry, json.dumps(data))
         return data
 
+
+
 @app.route('/stock/<symbol>')
 def stock_detail(symbol):
     end_date = datetime.now().date() - timedelta(days=1)  # Yesterday
-    start_date_1m = end_date - timedelta(days=30)
-    start_date_3m = end_date - timedelta(days=90)
     start_date_1y = end_date - timedelta(days=365)
-
-    # Fetch historical data with caching
-    def fetch_historical_data(start_date):
-        def fetch_func():
-            data = api.get_bars(
-                symbol, 
-                TimeFrame.Day, 
-                start_date.isoformat(), 
-                end_date.isoformat(),
-                adjustment='raw'
-            ).df
-            # Convert DataFrame to a dictionary with date strings as keys
-            return {date.strftime('%Y-%m-%d'): row.to_dict() for date, row in data.iterrows()}
-        
-        cache_key = f"{symbol}_historical_{start_date.isoformat()}_{end_date.isoformat()}"
-        return get_cached_data(cache_key, fetch_func, expiry=24*3600)  # Cache for 24 hours
-
-    data_1m = fetch_historical_data(start_date_1m)
-    data_3m = fetch_historical_data(start_date_3m)
-    data_1y = fetch_historical_data(start_date_1y)
-
-    def process_data(data_dict):
-        sorted_data = sorted(data_dict.items(), key=lambda x: x[0], reverse=True)
-        return [{'date': date, 'close': item['close']} for date, item in sorted_data]
-
+    historical_data = fetch_historical_data(symbol, start_date_1y, end_date)
+    # Process the data for different time periods
+    def process_data(data_dict, days):
+        cutoff_date = (end_date - timedelta(days=days)).strftime('%Y-%m-%d')
+        filtered_data = {k: v for k, v in data_dict.items() if k >= cutoff_date}
+        sorted_data = sorted(filtered_data.items(), key=lambda x: x[0], reverse=True)
+        return [{
+            'date': date,
+            'open': item['open'],
+            'high': item['high'],
+            'low': item['low'],
+            'close': item['close'],
+            'volume': item['volume'],
+            'vwap': item['vwap']
+        } for date, item in sorted_data]
 
     data = {
-        '1M': process_data(data_1m),
-        '3M': process_data(data_3m),
-        '1Y': process_data(data_1y)
+        '1M': process_data(historical_data, 30),
+        '3M': process_data(historical_data, 90),
+        '1Y': process_data(historical_data, 365)
     }
-
     # Get latest available price with caching
     def fetch_latest_price():
         latest_trade = api.get_latest_trade(symbol)
@@ -100,8 +120,8 @@ def stock_detail(symbol):
     current_price = get_cached_data(f"{symbol}_latest_price", fetch_latest_price, expiry=300)  # Cache for 5 minutes
 
     # Calculate metrics
-    high_52week = max(item['high'] for item in data_1y.values())
-    low_52week = min(item['low'] for item in data_1y.values())
+    high_52week = max(item['high'] for item in historical_data.values())
+    low_52week = min(item['low'] for item in historical_data.values())
     
     # Calculate moving averages
     closing_prices = [item['close'] for item in reversed(data['1Y'])]  # Reverse to get chronological order
@@ -125,17 +145,21 @@ def stock_detail(symbol):
 
     news_data = get_cached_data(f"{symbol}_news", fetch_news, expiry=1800)  # Cache for 30 minutes
 
+    # Get trade recommendation
+    recommendation = get_trade_recommendation(symbol, historical_data)
     return render_template('stock_detail.html', 
-                           symbol=symbol, 
-                           data=data, 
-                           current_price=current_price,
-                           end_date=end_date,
-                           high_52week=high_52week,
-                           low_52week=low_52week,
-                           ma_50=ma_50,
-                           ma_200=ma_200,
-                           percent_change=percent_change,
-                           news=news_data)
+                            symbol=symbol, 
+                            data=data,
+                            current_price=current_price,
+                            end_date=end_date,
+                            high_52week=high_52week,
+                            low_52week=low_52week,
+                            ma_50=ma_50,
+                            ma_200=ma_200,
+                            percent_change=percent_change,
+                            news=news_data,
+                            recommendation=recommendation)
+
 
 
 # Debug function to check API connection

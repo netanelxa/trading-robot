@@ -44,6 +44,19 @@
     </tr>
 </table>
 
+
+<div class="recommendation-section">
+    <h2>Trade Recommendation</h2>
+    <p><strong>Recommendation:</strong> {{ recommendation.recommendation }}</p>
+    <h3>Reasons:</h3>
+    <ul>
+    {% for reason in recommendation.reasons %}
+        <li>{{ reason }}</li>
+    {% endfor %}
+    </ul>
+</div>
+
+
 <div class="chart-container">
     <div class="time-period-selector">
         <button>1M</button>
@@ -54,18 +67,28 @@
 </div>
 
 <h2>Historical Prices</h2>
-<table class="price-table">
+<table id="historical-data" class="price-table">
     <thead>
         <tr>
             <th>Date</th>
-            <th>Closing Price</th>
+            <th>Open</th>
+            <th>High</th>
+            <th>Low</th>
+            <th>Close</th>
+            <th>Volume</th>
+            <th>VWAP</th>
         </tr>
     </thead>
     <tbody id="priceTable">
         {% for item in data['1M'] %}
         <tr>
             <td>{{ item.date }}</td>
-            <td>${{ "%.2f"|format(item.close) }}</td>
+            <td>${{ "{:.2f}".format(item.open) }}</td>
+            <td>${{ "{:.2f}".format(item.high) }}</td>
+            <td>${{ "{:.2f}".format(item.low) }}</td>
+            <td>${{ "{:.2f}".format(item.close) }}</td>
+            <td>{{ "{:,}".format(item.volume) }}</td>
+            <td>${{ "{:.2f}".format(item.vwap) }}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -87,7 +110,7 @@
 </div>
 
 <script>
-    var chartData = {{ data|tojson }};
+    var chartData = {{ data|tojson|safe }};
     var ctx = document.getElementById('stockChart').getContext('2d');
     var myChart;
 
@@ -135,7 +158,17 @@
         var tableBody = document.getElementById('priceTable');
         tableBody.innerHTML = '';
         chartData[period].forEach(item => {
-            var row = `<tr><td>${item.date}</td><td>$${item.close.toFixed(2)}</td></tr>`;
+            var row = `
+                <tr>
+                    <td>${item.date}</td>
+                    <td>$${item.open.toFixed(2)}</td>
+                    <td>$${item.high.toFixed(2)}</td>
+                    <td>$${item.low.toFixed(2)}</td>
+                    <td>$${item.close.toFixed(2)}</td>
+                    <td>${item.volume.toLocaleString()}</td>
+                    <td>$${item.vwap.toFixed(2)}</td>
+                </tr>
+            `;
             tableBody.innerHTML += row;
         });
     }
