@@ -2,6 +2,26 @@
 {% block title %}{{ symbol }} Stock Details{% endblock %}
 {% block additional_styles %}
 <style>
+    .export-button {
+        background: linear-gradient(90deg, #4CAF50, #3e8e41);
+        color: white;
+        border: none;
+        padding: 12px 25px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin-bottom: 20px;
+        cursor: pointer;
+        border-radius: 30px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    .export-button:hover {
+        background: linear-gradient(90deg, #3e8e41, #4CAF50);
+        transform: scale(1.05);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
     .stock-info { margin-bottom: 20px; }
     .chart-container { margin-bottom: 20px; }
     .time-period-selector { margin-bottom: 10px; }
@@ -58,12 +78,13 @@
 
 
 <div class="chart-container">
-    <div class="time-period-selector">
-        <button>1M</button>
-        <button>3M</button>
-        <button>1Y</button>
-    </div>
-    <canvas id="stockChart" width="400" height="200"></canvas>
+    <canvas id="stockChart"></canvas>
+</div>
+
+<div class="time-period-selector">
+    <button id="1M">1M</button>
+    <button id="3M">3M</button>
+    <button id="1Y">1Y</button>
 </div>
 
 <h2>Historical Prices</h2>
@@ -85,8 +106,8 @@
     {% endfor %}
     </tbody>
 </table>
-
-<button onclick="window.location.href='{{ url_for('export_data', symbol=symbol) }}'">
+<br>
+<button class="export-button" onclick="window.location.href='{{ url_for('export_data', symbol=symbol) }}'">
     Export Data
 </button>
 
@@ -105,83 +126,54 @@
     Note: Due to free plan limitations, data is delayed by one trading day. Last available data: {{ end_date }}
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 <script>
-    var chartData = {{ data|tojson|safe }};
-    var ctx = document.getElementById('stockChart').getContext('2d');
-    var myChart;
-
-    function loadChartJs(src) {
-        return new Promise(function(resolve, reject) {
-            var script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
+    const chartData = {{ data | tojson | safe }};
+    const ctx = document.getElementById('stockChart').getContext('2d');
+    
+    function prepareChartData(period) {
+        return chartData[period].map(item => ({
+            x: new Date(item.date),
+            y: item.Close
+        })).reverse();  // Reverse to get chronological order
     }
 
-    function createChart(period) {
-        var data = chartData[period];
-        myChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.map(item => item.date).reverse(),
-                datasets: [{
-                    label: '{{ symbol }} Closing Price',
-                    data: data.map(item => item.close).reverse(),
-                    borderColor: 'rgb(75, 192, 192)',
-                    tension: 0.1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: false
+    let chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: '{{ symbol }} Stock Price',
+                data: prepareChartData('1M'),
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'day'
                     }
+                },
+                y: {
+                    beginAtZero: false
                 }
             }
-        });
-    }
-
-    function updateChart(period) {
-        if (myChart) {
-            myChart.destroy();
         }
-        createChart(period);
+    });
 
-        // Update table
-        var tableBody = document.getElementById('priceTable');
-        tableBody.innerHTML = '';
-        chartData[period].forEach(item => {
-            var row = `
-                <tr>
-                    <td>${item.date}</td>
-                    <td>$${item.open.toFixed(2)}</td>
-                    <td>$${item.high.toFixed(2)}</td>
-                    <td>$${item.low.toFixed(2)}</td>
-                    <td>$${item.close.toFixed(2)}</td>
-                    <td>${item.volume.toLocaleString()}</td>
-                    <td>$${item.vwap.toFixed(2)}</td>
-                </tr>
-            `;
-            tableBody.innerHTML += row;
-        });
+    // Function to update chart data
+    function updateChartData(period) {
+        chart.data.datasets[0].data = prepareChartData(period);
+        chart.update();
     }
 
-    // Load Chart.js and initialize the chart
-    loadChartJs('https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js')
-        .then(function() {
-            createChart('1M');  // Initial chart
-            // Add click event listeners to buttons after Chart.js is loaded
-            document.querySelectorAll('.time-period-selector button').forEach(button => {
-                button.addEventListener('click', function() {
-                    updateChart(this.textContent.trim());
-                });
-            });
-        })
-        .catch(function(error) {
-            console.error('Failed to load Chart.js', error);
-        });
+    // Event listeners for time period buttons
+    document.getElementById('1M').addEventListener('click', () => updateChartData('1M'));
+    document.getElementById('3M').addEventListener('click', () => updateChartData('3M'));
+    document.getElementById('1Y').addEventListener('click', () => updateChartData('1Y'));
 </script>
 {% endblock %}
