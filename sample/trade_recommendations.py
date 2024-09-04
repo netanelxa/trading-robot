@@ -1,7 +1,33 @@
 import pandas as pd
 import numpy as np
-from ta.trend import SMAIndicator, MACD
+from ta.trend import SMAIndicator, MACD, CCIIndicator
 from ta.momentum import RSIIndicator
+
+
+
+def calculate_indicators(df):
+    df['SMA20'] = SMAIndicator(close=df['close'], window=20).sma_indicator()
+    df['SMA50'] = SMAIndicator(close=df['close'], window=50).sma_indicator()
+    df['SMA150'] = SMAIndicator(close=df['close'], window=150).sma_indicator()
+    df['SMA200'] = SMAIndicator(close=df['close'], window=200).sma_indicator()
+    macd = MACD(close=df['close'])
+    df['MACD'] = macd.macd()
+    df['MACD_signal'] = macd.macd_signal()
+    df['RSI'] = RSIIndicator(close=df['close']).rsi()
+    df['CCI'] = CCIIndicator(high=df['high'], low=df['low'], close=df['close']).cci()
+    
+    # Rename columns to match the desired format
+    df = df.rename(columns={
+        'open': 'Open',
+        'high': 'High',
+        'low': 'Low',
+        'close': 'Close',
+        'volume': 'Volume',
+        'vwap': 'VWAP'
+    })
+    
+    return df
+
 
 def analyze_stock(historical_data):
     # Convert the dictionary to a DataFrame
@@ -9,14 +35,6 @@ def analyze_stock(historical_data):
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
     
-    # Calculate indicators
-    df['SMA20'] = SMAIndicator(close=df['close'], window=20).sma_indicator()
-    df['SMA50'] = SMAIndicator(close=df['close'], window=50).sma_indicator()
-    macd = MACD(close=df['close'])
-    df['MACD'] = macd.macd()
-    df['MACD_signal'] = macd.macd_signal()
-    df['RSI'] = RSIIndicator(close=df['close']).rsi()
-
     # Generate recommendation
     last_row = df.iloc[-1]
     recommendation = "HOLD"
@@ -37,6 +55,11 @@ def analyze_stock(historical_data):
     elif last_row['RSI'] < 30:
         recommendation = "BUY"
         reasons.append("RSI indicates oversold conditions")
+
+    if last_row['CCI'] > 100:
+        reasons.append("CCI indicates overbought conditions")
+    elif last_row['CCI'] < -100:
+        reasons.append("CCI indicates oversold conditions")
 
     return recommendation, reasons
 

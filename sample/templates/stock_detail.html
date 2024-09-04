@@ -71,28 +71,24 @@
     <thead>
         <tr>
             <th>Date</th>
-            <th>Open</th>
-            <th>High</th>
-            <th>Low</th>
             <th>Close</th>
             <th>Volume</th>
-            <th>VWAP</th>
         </tr>
     </thead>
-    <tbody id="priceTable">
-        {% for item in data['1M'] %}
+    <tbody>
+    {% for item in data['1M'] %}
         <tr>
             <td>{{ item.date }}</td>
-            <td>${{ "{:.2f}".format(item.open) }}</td>
-            <td>${{ "{:.2f}".format(item.high) }}</td>
-            <td>${{ "{:.2f}".format(item.low) }}</td>
-            <td>${{ "{:.2f}".format(item.close) }}</td>
-            <td>{{ "{:,}".format(item.volume) }}</td>
-            <td>${{ "{:.2f}".format(item.vwap) }}</td>
+            <td>${{ "{:.2f}".format(item.Close) if item.Close is defined else "N/A" }}</td>
+            <td>{{ "{:,}".format(item.Volume) if item.Volume is defined else "N/A" }}</td>
         </tr>
-        {% endfor %}
+    {% endfor %}
     </tbody>
 </table>
+
+<button onclick="window.location.href='{{ url_for('export_data', symbol=symbol) }}'">
+    Export Data
+</button>
 
 <div class="news-section">
     <h2>Latest News</h2>
