@@ -7,7 +7,7 @@ from ta.volatility import BollingerBands
 
 
 
-def calculate_indicators(df):
+def calculate_indicators(df, spx_data):
     open_data = df['open'].values
     high_data = df['high'].values
     low_data = df['low'].values
@@ -21,6 +21,7 @@ def calculate_indicators(df):
     close_data = close_data.astype(np.float64)
     volume_data = volume_data.astype(np.float64)
 
+    # Existing indicators (keep these as they are)
     df['SMA20'] = SMAIndicator(close=df['close'], window=20).sma_indicator()
     df['SMA50'] = SMAIndicator(close=df['close'], window=50).sma_indicator()
     df['SMA150'] = SMAIndicator(close=df['close'], window=150).sma_indicator()
@@ -51,11 +52,20 @@ def calculate_indicators(df):
     df['ATR'] = talib.ATR(high_data, low_data, close_data, timeperiod=14)
     df['NATR'] = talib.NATR(high_data, low_data, close_data, timeperiod=14)
     
-    # Pattern Recognition
+    # New Pattern Recognition indicators
     df['CDLDOJI'] = talib.CDLDOJI(open_data, high_data, low_data, close_data)
-    df['CDLENGULFING'] = talib.CDLENGULFING(open_data, high_data, low_data, close_data)
     df['CDLHAMMER'] = talib.CDLHAMMER(open_data, high_data, low_data, close_data)
+    df['CDLENGULFING'] = talib.CDLENGULFING(open_data, high_data, low_data, close_data)
+    df['CDLSHOOTINGSTAR'] = talib.CDLSHOOTINGSTAR(open_data, high_data, low_data, close_data)
+    df['CDLHARAMI'] = talib.CDLHARAMI(open_data, high_data, low_data, close_data)
     df['CDLMORNINGSTAR'] = talib.CDLMORNINGSTAR(open_data, high_data, low_data, close_data, penetration=0)
+    df['CDLEVENINGSTAR'] = talib.CDLEVENINGSTAR(open_data, high_data, low_data, close_data, penetration=0)
+    df['CDLPIERCING'] = talib.CDLPIERCING(open_data, high_data, low_data, close_data)
+    df['CDLDARKCLOUDCOVER'] = talib.CDLDARKCLOUDCOVER(open_data, high_data, low_data, close_data, penetration=0)
+    df['CDLSPINNINGTOP'] = talib.CDLSPINNINGTOP(open_data, high_data, low_data, close_data)
+
+    # Add SPX close price
+    df['SPX_Close'] = spx_data['close']
 
     # Rename columns to match the desired format
     df = df.rename(columns={
@@ -68,6 +78,7 @@ def calculate_indicators(df):
     })
     
     return df
+
 
 
 def analyze_stock(historical_data):

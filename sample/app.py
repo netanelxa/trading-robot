@@ -41,9 +41,21 @@ def fetch_and_process_data(symbol, start_date, end_date):
         end_date.isoformat(),
         adjustment='raw'
     ).df
+    # Fetch SPX data for the same period
+    spx_bars = api.get_bars(
+        'SPY',  # Using SPY as a proxy for SPX
+        TimeFrame.Day, 
+        start_date.isoformat(), 
+        end_date.isoformat(),
+        adjustment='raw'
+    ).df
+
+    # Ensure both dataframes have the same index
+    bars = bars.reindex(spx_bars.index)
+    spx_bars = spx_bars.reindex(bars.index)
     
     # Calculate indicators
-    df = calculate_indicators(bars)
+    df = calculate_indicators(bars, spx_bars)   
     
     # Convert DataFrame to dictionary
     return df.to_dict('index')
@@ -185,7 +197,23 @@ def export_data(symbol):
     df.index = pd.to_datetime(df.index)  # Ensure the index is datetime
     df.sort_index(ascending=False, inplace=True)  # Sort by date descending
     df.index.name = 'Date'
-    columns_order = [ 'Open', 'High', 'Low', 'Close', 'Volume', 'VWAP', 'SMA20', 'SMA50', 'SMA150', 'SMA200', 'MACD', 'MACD_signal', 'RSI', 'CCI', 'BB_upper', 'BB_middle', 'BB_lower', 'BB_width', 'BB_percentage', 'EMA20', 'HT_TRENDLINE', 'STOCH_K', 'STOCH_D', 'WILLR', 'AD', 'OBV', 'ATR', 'NATR', 'CDLDOJI', 'CDLENGULFING', 'CDLHAMMER', 'CDLMORNINGSTAR' ]
+    
+    # Reorder the columns as requested
+    columns_order = [
+        'Open', 'High', 'Low', 'Close', 'Volume', 'VWAP',
+        'SPX_Close',
+        'SMA20', 'SMA50', 'SMA150', 'SMA200',
+        'MACD', 'MACD_signal', 'RSI', 'CCI',
+        'BB_upper', 'BB_middle', 'BB_lower', 'BB_width', 'BB_percentage',
+        'EMA20', 'HT_TRENDLINE',
+        'STOCH_K', 'STOCH_D',
+        'WILLR',
+        'AD', 'OBV',
+        'ATR', 'NATR',
+        'CDLDOJI', 'CDLHAMMER', 'CDLENGULFING', 'CDLSHOOTINGSTAR',
+        'CDLHARAMI', 'CDLMORNINGSTAR', 'CDLEVENINGSTAR',
+        'CDLPIERCING', 'CDLDARKCLOUDCOVER', 'CDLSPINNINGTOP'
+    ]
     df = df[columns_order]
     
     # Create a buffer to store the CSV data
@@ -199,6 +227,7 @@ def export_data(symbol):
         mimetype='text/csv',
         headers={'Content-Disposition': f'attachment;filename={symbol}_historical_data.csv'}
     )
+
 
 
 # Debug function to check API connection
