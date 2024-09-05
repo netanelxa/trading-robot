@@ -1,14 +1,17 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim
+# Use the netanelxa/talib image as the base image
+FROM netanelxa/talib:latest
 
 # Set the working directory
 WORKDIR /var/flasksite
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y build-essential python3-dev
 
 # Copy only the requirements file first
 COPY requirements.txt /var/flasksite/
 
 # Install Python dependencies
-RUN pip3 install -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . /var/flasksite/

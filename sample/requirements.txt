@@ -2,6 +2,6 @@ flask
 redis==4.3.4
 alpaca-trade-api
 fakeredis
-numpy
+numpy==1.19.5
 pandas
 ta
