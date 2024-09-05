@@ -185,9 +185,7 @@ def export_data(symbol):
     df.index = pd.to_datetime(df.index)  # Ensure the index is datetime
     df.sort_index(ascending=False, inplace=True)  # Sort by date descending
     df.index.name = 'Date'
-    
-    # Reorder the columns as requested
-    columns_order = ['Open', 'High', 'Low', 'Close', 'Volume', 'VWAP', 'SMA20', 'SMA50', 'SMA150', 'SMA200', 'MACD', 'MACD_signal', 'RSI', 'CCI']
+    columns_order = ['Open', 'High', 'Low', 'Close', 'Volume', 'VWAP', 'SMA20', 'SMA50', 'SMA150', 'SMA200', 'MACD', 'MACD_signal', 'RSI', 'CCI','BB_upper','BB_middle','BB_lower','BB_width','BB_percentage']
     df = df[columns_order]
     
     # Create a buffer to store the CSV data

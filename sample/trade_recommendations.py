@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from ta.trend import SMAIndicator, MACD, CCIIndicator
 from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands
 
 
 
@@ -15,7 +16,15 @@ def calculate_indicators(df):
     df['MACD_signal'] = macd.macd_signal()
     df['RSI'] = RSIIndicator(close=df['close']).rsi()
     df['CCI'] = CCIIndicator(high=df['high'], low=df['low'], close=df['close']).cci()
+    # Bollinger Bands
+    bollinger = BollingerBands(close=df['close'], window=20, window_dev=2)
+    df['BB_upper'] = bollinger.bollinger_hband()
+    df['BB_middle'] = bollinger.bollinger_mavg()
+    df['BB_lower'] = bollinger.bollinger_lband()
     
+    # Optional: You can also add Bollinger Band width and percentage
+    df['BB_width'] = bollinger.bollinger_wband()
+    df['BB_percentage'] = bollinger.bollinger_pband()
     # Rename columns to match the desired format
     df = df.rename(columns={
         'open': 'Open',
@@ -61,6 +70,10 @@ def analyze_stock(historical_data):
     elif last_row['CCI'] < -100:
         reasons.append("CCI indicates oversold conditions")
 
+    if last_row['Close'] > last_row['BB_upper']:
+        reasons.append("Price above upper Bollinger Band, possibly overbought")
+    elif last_row['Close'] < last_row['BB_lower']:
+        reasons.append("Price below lower Bollinger Band, possibly oversold")
     return recommendation, reasons
 
 def get_trade_recommendation(symbol, historical_data):
