@@ -174,6 +174,38 @@ def stock_detail(symbol):
     # Get trade recommendation
     recommendation = get_trade_recommendation(symbol, historical_data)
 
+    # Check for candlestick patterns on the last day
+    pattern_columns = ['CDLDOJI', 'CDLHAMMER', 'CDLENGULFING', 'CDLSHOOTINGSTAR',
+                       'CDLHARAMI', 'CDLMORNINGSTAR', 'CDLEVENINGSTAR',
+                       'CDLPIERCING', 'CDLDARKCLOUDCOVER', 'CDLSPINNINGTOP']
+    
+    detected_patterns = []
+    for col in pattern_columns:
+        if last_data[col] != 0:
+            pattern_name = col.replace('CDL', '').title()
+            pattern_value = last_data[col]
+            open_price = last_data['Open']
+            high_price = last_data['High']
+            low_price = last_data['Low']
+            close_price = last_data['Close']
+            
+            # Pre-calculate values for the template
+            price_range = high_price - low_price
+            body_height = abs(close_price - open_price) / price_range * 50
+            wick_top_height = (high_price - max(open_price, close_price)) / price_range * 50
+            wick_bottom_height = (min(open_price, close_price) - low_price) / price_range * 50
+            
+            detected_patterns.append({
+                'name': pattern_name,
+                'value': pattern_value,
+                'bullish': close_price > open_price,
+                'body_height': body_height,
+                'wick_top_height': wick_top_height,
+                'wick_bottom_height': wick_bottom_height,
+                'body_position': (high_price - max(open_price, close_price)) / price_range * 50
+            })
+
+
     return render_template('stock_detail.html', 
                            symbol=symbol, 
                            data=data,
@@ -185,6 +217,7 @@ def stock_detail(symbol):
                            ma_200=ma_200,
                            percent_change=percent_change,
                            news=news_data,
+                           detected_patterns=detected_patterns,
                            recommendation=recommendation)
 
 
