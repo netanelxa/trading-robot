@@ -1,25 +1,29 @@
-FROM python:3.9-slim
+# Use the netanelxa/talib image as the base image
+FROM netanelxa/talib:latest
 
-RUN mkdir /var/flasksite
+# Set the working directory
+WORKDIR /var/flasksite
 
-COPY . /var/flasksite/
+# Install system dependencies
+RUN apt-get update && apt-get install -y build-essential python3-dev
 
-WORKDIR /var/flasksite/
+# Copy only the requirements file first
+COPY requirements.txt /var/flasksite/
 
-RUN pip3 install -r requirements.txt
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
 RUN opentelemetry-bootstrap --action=install
 
+# Copy the rest of the application code
+COPY . /var/flasksite/
 
+# Expose the port Flask will run on
 EXPOSE 5000
 
-# TODO: move to k8s config-map
+# Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_RUN_HOST=0.0.0.0
-
-#ENV OTEL_RESOURCE_ATTRIBUTES=service.name=flaskApp 
-#ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-#ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 ENV OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
 
-# CMD ["flask", "run"]
+# Command to run the application
 CMD [ "opentelemetry-instrument", "--traces_exporter",  "console", "--service_name", "web-ui", "flask", "run" ]
