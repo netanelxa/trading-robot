@@ -9,9 +9,13 @@ from datetime import datetime, timedelta
 from trade_recommendations import get_trade_recommendation, calculate_indicators
 import json
 import io
+from opentelemetry import trace
+import inspect
 
 app = Flask(__name__)
 app.jinja_env.filters['tojson'] = json.dumps
+serviceName = "web-ui"
+tracer = trace.get_tracer(serviceName + ".tracer")
 
 # Use FakeRedis for local development
 if os.environ.get('FLASK_ENV') == 'development':
@@ -30,6 +34,7 @@ api = REST(key_id=os.environ.get('APCA_API_KEY_ID'),  # Corrected env var name
 
 @app.route('/')
 def index():
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     return render_template('index.html')
 
 
@@ -98,6 +103,7 @@ def get_stock_data(symbol):
 
 @app.route('/add-stock', methods=['GET', 'POST'])
 def add_stock():
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     message = None
     if request.method == 'POST':
         symbol = request.form['symbol'].upper()
@@ -110,6 +116,7 @@ def add_stock():
 
 @app.route('/stocks')
 def list_stocks():
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     stocks = redis.smembers('stocks')
     return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
 
@@ -136,6 +143,7 @@ def process_data(data_dict, days):
 
 @app.route('/stock/<symbol>')
 def stock_detail(symbol):
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     historical_data = get_stock_data(symbol)
     data = {
         '1M': process_data(historical_data, 30),
