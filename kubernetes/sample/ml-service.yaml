@@ -16,5 +16,5 @@ spec:
       - name: ml-service
         image: netanelxa/ml-service:latest
         ports:
-        - containerPort: 5001
+        - containerPort: 5002
         imagePullPolicy: Always

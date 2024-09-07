@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -165,6 +165,37 @@ def predict():
         "forecast": forecast
     }), 200
 
+@app.route('/')
+def index():
+    html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ML Service Status</title>
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
+            h1 { color: #333; }
+            .status { font-weight: bold; color: green; }
+        </style>
+    </head>
+    <body>
+        <h1>ML Service Status</h1>
+        <p>Status: <span class="status">Running</span></p>
+        <p>This page confirms that the ML service is up and running.</p>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
+@app.route('/<path:path>')
+def catch_all(path):
+    return jsonify({"message": f"Undefined route: {path}"}), 404
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
+    app.run(host='0.0.0.0', port=5002)

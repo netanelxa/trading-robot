@@ -12,6 +12,9 @@
     #results { margin-top: 20px; background: #e9e9e9; padding: 20px; border-radius: 5px; }
     #progressBar { width: 100%; background-color: #f3f3f3; }
     #progressBar div { width: 0%; height: 30px; background-color: #4CAF50; text-align: center; line-height: 30px; color: white; }
+    #trainingStatus { margin-top: 10px; font-weight: bold; }
+    #debugInfo { margin-top: 20px; font-family: monospace; white-space: pre-wrap; }
+
 </style>
 {% endblock %}
 
@@ -34,6 +37,7 @@
     
     <button type="submit">Train Model</button>
 </form>
+<div id="trainingStatus"></div>
 
 <div id="progressBar" style="display: none;">
     <div></div>
@@ -43,6 +47,7 @@
     <h2>Training Results</h2>
     <p id="resultText">No results yet. Train a model to see results.</p>
 </div>
+<div id="debugInfo"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
 <script>
@@ -55,53 +60,116 @@
             console.error('Error fetching current model:', error);
         });
 
+        
         document.getElementById('trainingForm').addEventListener('submit', function(e) {
         e.preventDefault();
         
         const ticker = document.getElementById('ticker').value;
         const modelType = document.getElementById('modelType').value;
         
-        document.getElementById('resultText').textContent = 'Initializing training...';
+        document.getElementById('trainingStatus').textContent = 'Initiating training...';
         document.getElementById('progressBar').style.display = 'block';
         document.querySelector('#progressBar div').style.width = '0%';
         document.querySelector('#progressBar div').textContent = '0%';
         
-        const eventSource = new EventSource(`/train_model?ticker=${ticker}&model_type=${modelType}`);
-        
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            if (data.progress) {
-                document.querySelector('#progressBar div').style.width = data.progress + '%';
-                document.querySelector('#progressBar div').textContent = data.progress + '%';
-            } else if (data.message) {
-                eventSource.close();
-                document.querySelector('#progressBar div').style.width = '100%';
-                document.querySelector('#progressBar div').textContent = '100%';
-                
-                let resultText = `Training completed: ${data.message}\n\n`;
-                resultText += `Model Type: ${data.result.model_type}\n`;
-                resultText += `Metrics:\n`;
-                for (let [key, value] of Object.entries(data.result.metrics)) {
-                    resultText += `  ${key}: ${value.toFixed(4)}\n`;
-                }
-                if (data.result.feature_importance) {
-                    resultText += `\nFeature Importance:\n`;
-                    for (let [feature, importance] of Object.entries(data.result.feature_importance)) {
-                        resultText += `  ${feature}: ${(importance * 100).toFixed(2)}%\n`;
-                    }
-                }
-                document.getElementById('resultText').textContent = resultText;
-                document.getElementById('currentModel').textContent = data.result.model_type;
-            } else if (data.error) {
-                eventSource.close();
-                document.getElementById('resultText').textContent = `Error: ${data.error}`;
-            }
-        };
-        
-        eventSource.onerror = function(error) {
-            eventSource.close();
-            document.getElementById('resultText').textContent = 'Error: Connection to server lost';
-        };
+        axios.post('/train_model', {
+            ticker: ticker || null,
+            model_type: modelType
+        })
+        .then(function (response) {
+            const taskId = response.data.task_id;
+            pollTrainingStatus(taskId);
+        })
+        .catch(function (error) {
+            document.getElementById('trainingStatus').textContent = `Error: ${error.response.data.error}`;
+        });
     });
+
+    function pollTrainingStatus(taskId) {
+        let progress = 0;
+        const statusElement = document.getElementById('trainingStatus');
+        const progressBarElement = document.querySelector('#progressBar div');
+        const resultTextElement = document.getElementById('resultText');
+        const debugInfoElement = document.getElementById('debugInfo');
+        
+        function updateProgress() {
+            progress += 5;
+            if (progress > 90) progress = 90;
+            progressBarElement.style.width = progress + '%';
+            progressBarElement.textContent = progress + '%';
+        }
+
+        function logDebugInfo(message) {
+            console.log(message);
+            debugInfoElement.textContent += message + '\n';
+        }
+
+        function checkStatus() {
+            logDebugInfo(`Checking status for task ${taskId}...`);
+            axios.get(`/training_status/${taskId}`)
+                .then(function (response) {
+                    logDebugInfo(`Received response: ${JSON.stringify(response.data, null, 2)}`);
+                    updateProgress();
+                    if (response.data && response.data.status) {
+                        if (response.data.status === 'completed') {
+                            statusElement.textContent = 'Training completed!';
+                            progressBarElement.style.width = '100%';
+                            progressBarElement.textContent = '100%';
+                            if (response.data.result && !response.data.result.error) {
+                                displayResults(response.data.result);
+                            } else {
+                                const errorMessage = response.data.result ? response.data.result.error : 'Unknown error occurred';
+                                logDebugInfo(`Error in result: ${errorMessage}`);
+                                statusElement.textContent = `Training failed: ${errorMessage}`;
+                                statusElement.className = 'error';
+                            }
+                        } else if (response.data.status === 'failed') {
+                            statusElement.textContent = `Training failed: ${response.data.error || 'Unknown error'}`;
+                            statusElement.className = 'error';
+                        } else if (response.data.status === 'in_progress') {
+                            statusElement.textContent = 'Training in progress...';
+                            setTimeout(checkStatus, 2000);
+                        } else {
+                            statusElement.textContent = `Unexpected status: ${response.data.status}`;
+                            statusElement.className = 'error';
+                        }
+                    } else {
+                        logDebugInfo('Error: Response data is not in the expected format.');
+                        statusElement.textContent = 'Error: Unexpected response format';
+                        statusElement.className = 'error';
+                    }
+                })
+                .catch(function (error) {
+                    logDebugInfo(`Error checking training status: ${error}`);
+                    statusElement.textContent = `Error checking training status: ${error.response ? error.response.data.message : error.message}`;
+                    statusElement.className = 'error';
+                    resultTextElement.textContent = 'An error occurred while checking the training status. Please try again later.';
+                });
+        }
+
+        checkStatus();
+    }
+
+    function displayResults(result) {
+        logDebugInfo(`Displaying results: ${JSON.stringify(result, null, 2)}`);
+        let resultText = `Training completed: ${result.message || 'No message provided'}\n\n`;
+        resultText += `Model Type: ${result.model_type || 'Unknown'}\n`;
+        resultText += `Metrics:\n`;
+        if (result.metrics) {
+            for (let [key, value] of Object.entries(result.metrics)) {
+                resultText += `  ${key}: ${typeof value === 'number' ? value.toFixed(4) : value}\n`;
+            }
+        } else {
+            resultText += '  No metrics available\n';
+        }
+        if (result.feature_importance) {
+            resultText += `\nFeature Importance:\n`;
+            for (let [feature, importance] of Object.entries(result.feature_importance)) {
+                resultText += `  ${feature}: ${typeof importance === 'number' ? (importance * 100).toFixed(2) : importance}%\n`;
+            }
+        }
+        document.getElementById('resultText').textContent = resultText;
+        document.getElementById('currentModel').textContent = result.model_type || 'Unknown';
+    }
 </script>
 {% endblock %}

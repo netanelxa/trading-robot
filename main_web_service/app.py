@@ -13,6 +13,8 @@ import numpy as np
 from opentelemetry import trace
 import inspect
 import requests
+import threading
+import uuid
 
 
 app = Flask(__name__)
@@ -20,7 +22,8 @@ app.jinja_env.filters['tojson'] = json.dumps
 serviceName = "web-ui"
 tracer = trace.get_tracer(serviceName + ".tracer")
 
-ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://localhost:5001')
+ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://localhost:5002')
+print(f"ML Service URL: {ML_SERVICE_URL}")  # Add this line for debugging
 
 
 # Use FakeRedis for local development
@@ -396,7 +399,6 @@ def market_movers():
             return render_template('error.html', message="Unable to fetch market data. Please try again later."), 500
 
 
-
 def train_ml_model(ticker=None, model_type='rf'):
     if ticker:
         stock_data = {ticker: get_stock_data(ticker).to_dict(orient='index')}
@@ -407,16 +409,20 @@ def train_ml_model(ticker=None, model_type='rf'):
             stock_symbol = stock.decode('utf-8')
             stock_data[stock_symbol] = get_stock_data(stock_symbol).to_dict(orient='index')
     
+    # Convert Timestamp index to string and handle non-JSON-compliant floats
+    for symbol, data in stock_data.items():
+        stock_data[symbol] = {k.isoformat(): {kk: json_serialize(vv) for kk, vv in v.items()} for k, v in data.items()}
+    
     try:
         response = requests.post(f"{ML_SERVICE_URL}/train", 
                                  json={"data": stock_data, "model_type": model_type})
         if response.status_code == 200:
             result = response.json()
-            # Store the trained model type, metrics, and feature importance in Redis
+            # Store the trained model type and metrics in Redis
             redis.set('current_model_type', model_type)
-            redis.set('model_metrics', json.dumps(result['metrics']))
+            redis.set('model_metrics', json.dumps(result['metrics'], default=json_serialize))
             if 'feature_importance' in result:
-                redis.set('feature_importance', json.dumps(result['feature_importance']))
+                redis.set('feature_importance', json.dumps(result['feature_importance'], default=json_serialize))
             return {
                 "message": "Model trained successfully",
                 "model_type": model_type,
@@ -427,33 +433,67 @@ def train_ml_model(ticker=None, model_type='rf'):
             return {"error": f"Error training model: {response.json().get('error')}"}
     except requests.RequestException as e:
         return {"error": f"Error connecting to ML service: {str(e)}"}
+    except json.JSONDecodeError as e:
+        return {"error": f"Error decoding JSON response from ML service: {str(e)}"}
+
+# Global dictionary to store training status
+training_tasks = {}
+
+def serialize_for_json(obj):
+    if isinstance(obj, (datetime, pd.Timestamp)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
+def train_model_task(task_id, ticker, model_type):
+    try:
+        result = train_ml_model(ticker, model_type)
+        serialized_result = json.loads(json.dumps(result, default=json_serialize))
+        training_tasks[task_id] = {
+            "status": "completed",
+            "result": serialized_result
+        }
+    except Exception as e:
+        training_tasks[task_id] = {
+            "status": "failed",
+            "error": str(e)
+        }
 
+def json_serialize(obj):
+    if isinstance(obj, (int, float, np.integer, np.floating)):
+        return str(obj)  # Convert numeric types to string
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()  # Convert numpy arrays to lists
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
-def generate_progress():
-    for i in range(20):
-        time.sleep(0.5)  # Simulate some work
-        yield f"data: {json.dumps({'progress': (i+1)*5})}\n\n"
 
 @app.route('/train_model', methods=['POST'])
 def train_model_endpoint():
     ticker = request.json.get('ticker')
     model_type = request.json.get('model_type', 'rf')  # Default to 'rf' if not specified
     
-    def generate():
-        yield from generate_progress()
-        try:
-            result = train_ml_model(ticker, model_type)
-            if 'error' in result:
-                yield f"data: {json.dumps({'error': result['error']})}\n\n"
-            else:
-                yield f"data: {json.dumps({'message': f'Model {model_type} trained successfully' + (f' for {ticker}' if ticker else ''), 'result': result})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    task_id = str(uuid.uuid4())  # Generate a unique task ID
+    training_tasks[task_id] = {"status": "in_progress"}
     
-    return Response(generate(), content_type='text/event-stream')
+    # Start the training in a background thread
+    thread = threading.Thread(target=train_model_task, args=(task_id, ticker, model_type))
+    thread.start()
+    
+    return jsonify({"task_id": task_id, "message": "Training started"}), 202
 
+@app.route('/training_status/<task_id>')
+def training_status(task_id):
+    try:
+        task = training_tasks.get(task_id)
+        if not task:
+            return jsonify({"status": "not_found", "message": "Task ID not found"}), 404
+        
+        # Use custom JSON serialization
+        serialized_task = json.loads(json.dumps(task, default=json_serialize))
+        return jsonify(serialized_task)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
 @app.route('/ml_training')
 def ml_training():
     return render_template('ml_training.html')
@@ -471,7 +511,16 @@ def check_api_connection():
 # Call this function when your app starts
 check_api_connection()
 
-
+@app.route('/test_ml_service')
+def test_ml_service():
+    try:
+        response = requests.get(f"{ML_SERVICE_URL}/health", timeout=5)
+        if response.status_code == 200:
+            return jsonify({"message": "ML service is accessible"}), 200
+        else:
+            return jsonify({"error": f"ML service returned unexpected status: {response.status_code}"}), 500
+    except requests.RequestException as e:
+        return jsonify({"error": f"Error connecting to ML service: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)),debug=True)

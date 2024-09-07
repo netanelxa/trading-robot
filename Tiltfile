@@ -25,12 +25,18 @@ docker_build(
 custom_build(
     'netanelxa/ml-service',
     'docker pull netanelxa/ml-service:latest',
-    deps=[],
+    deps=[],  # No local dependencies to watch for changes
     tag='latest'
 )
-k8s_resource('ml-service', port_forwards='5001:5001')
 
+# Push the latest image to Docker Hub after pulling it
+local('docker push netanelxa/ml-service:latest')
 
+# Define the Kubernetes resource and expose it with port forwarding
+k8s_resource('ml-service', port_forwards='5002:5002')
+
+# Optionally add a post-push action, such as logging or updating configurations
+local('echo "Docker image has been pulled and pushed."')
 
 # Create and manage the Alpaca secrets
 local_resource(

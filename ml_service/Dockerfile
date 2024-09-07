@@ -14,6 +14,6 @@ RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 # Copy the application code
 COPY ml_service.py .
 
-EXPOSE 5001
+EXPOSE 5002
 
 CMD ["python", "ml_service.py"]
