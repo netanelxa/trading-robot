@@ -1,8 +1,9 @@
+ # -*- mode: Python -*-
 load('ext://dotenv', 'dotenv')
 dotenv()
 
-# Install argo
-local('echo local')
+# otel:
+include("./opentelemetry.Tiltfile")
 
 # Build and watch the trading robot application
 local_resource(
