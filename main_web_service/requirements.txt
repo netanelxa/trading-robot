@@ -10,6 +10,7 @@ ta==0.11.0
 
 # web:
 flask==3.0.3
+requests
 opentelemetry-api==1.26.0
 opentelemetry-distro==0.47b0
 opentelemetry-instrumentation-flask==0.47b0

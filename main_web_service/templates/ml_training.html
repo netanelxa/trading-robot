@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Model Training</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
+        h1 { color: #333; }
+        form { background: #f4f4f4; padding: 20px; border-radius: 5px; }
+        label { display: block; margin-bottom: 5px; }
+        input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { display: block; width: 100%; padding: 10px; background: #333; color: #fff; border: none; cursor: pointer; }
+        button:hover { background: #555; }
+        #results { margin-top: 20px; background: #e9e9e9; padding: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>ML Model Training</h1>
+    <form id="trainingForm">
+        <label for="ticker">Stock Ticker:</label>
+        <input type="text" id="ticker" name="ticker" required>
+        
+        <label for="modelType">ML Model Type:</label>
+        <select id="modelType" name="modelType">
+            <option value="rf">Random Forest</option>
+            <option value="svm">Support Vector Machine</option>
+            <option value="nn">Neural Network</option>
+        </select>
+        
+        <button type="submit">Train Model</button>
+    </form>
+
+    <div id="results">
+        <h2>Training Results</h2>
+        <p id="resultText">No results yet. Train a model to see results.</p>
+    </div>
+
+    <script>
+        document.getElementById('trainingForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const ticker = document.getElementById('ticker').value;
+            const modelType = document.getElementById('modelType').value;
+            
+            document.getElementById('resultText').textContent = 'Training in progress...';
+            
+            axios.post('/train_model', {
+                ticker: ticker,
+                model_type: modelType
+            })
+            .then(function (response) {
+                document.getElementById('resultText').textContent = `Training completed: ${response.data.message}`;
+            })
+            .catch(function (error) {
+                document.getElementById('resultText').textContent = `Error: ${error.response.data.error}`;
+            });
+        });
+    </script>
+</body>
+</html>

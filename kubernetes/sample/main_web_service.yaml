@@ -38,6 +38,11 @@ spec:
             secretKeyRef:
               name: alpaca-secrets
               key: api-secret-key
+        - name: ALPHA_VANTAGE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: api-key-avantage
         resources:
           requests:
             cpu: 100m

@@ -75,6 +75,13 @@
     .bearish {
         background-color: red;
     }
+    .ml-section { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+    .ml-prediction { margin-bottom: 15px; }
+    .forecast-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .forecast-table th, .forecast-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    .forecast-table th { background-color: #f2f2f2; }
+    .feature-importance { margin-top: 15px; }
+    .feature-bar { background-color: #4CAF50; height: 20px; margin-bottom: 5px; }
 </style>
 {% endblock %}
 
@@ -167,6 +174,80 @@
     Export Data
 </button>
 
+
+<div class="ml-section">
+    <h2>Machine Learning Insights</h2>
+    
+    {% if current_model_type %}
+        <p><strong>Current Model:</strong> {{ current_model_type }}</p>
+        
+        {% if prediction is not none %}
+            <div class="ml-prediction">
+                <h3>Prediction</h3>
+                <p><strong>Predicted Next Close:</strong> ${{ "{:.2f}".format(prediction) }}</p>
+                {% if confidence %}
+                    <p><strong>Confidence Interval:</strong> ${{ "{:.2f}".format(confidence[0]) }} - ${{ "{:.2f}".format(confidence[1]) }}</p>
+                {% endif %}
+            </div>
+            
+            {% if forecast %}
+                <h3>5-Day Forecast</h3>
+                <table class="forecast-table">
+                    <tr>
+                        <th>Day</th>
+                        <th>Predicted Close</th>
+                    </tr>
+                    {% for i in range(5) %}
+                        <tr>
+                            <td>Day {{ i + 1 }}</td>
+                            <td>${{ "{:.2f}".format(forecast[i]) }}</td>
+                        </tr>
+                    {% endfor %}
+                </table>
+            {% endif %}
+        {% else %}
+            <p>No prediction available for this stock.</p>
+        {% endif %}
+        
+        {% if model_metrics %}
+            <h3>Model Performance Metrics</h3>
+            <table class="metrics-table">
+                <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td>Mean Squared Error (MSE)</td>
+                    <td>{{ "{:.4f}".format(model_metrics.mse) }}</td>
+                </tr>
+                <tr>
+                    <td>Root Mean Squared Error (RMSE)</td>
+                    <td>{{ "{:.4f}".format(model_metrics.rmse) }}</td>
+                </tr>
+                <tr>
+                    <td>R-squared (R2) Score</td>
+                    <td>{{ "{:.4f}".format(model_metrics.r2) }}</td>
+                </tr>
+            </table>
+        {% endif %}
+        
+        {% if feature_importance %}
+            <div class="feature-importance">
+                <h3>Feature Importance</h3>
+                {% for feature, importance in feature_importance %}
+                    <div>
+                        <span>{{ feature }}:</span>
+                        <div class="feature-bar" style="width: {{ importance * 100 }}%"></div>
+                        <span>{{ "{:.2f}%".format(importance * 100) }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p>No ML model has been trained yet. Go to the ML Training page to train a model.</p>
+    {% endif %}
+</div>
+
 <div class="news-section">
     <h2>Latest News</h2>
     {% for item in news %}
@@ -185,13 +266,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 <script>
-    const chartData = {{ data | tojson | safe }};
+  const chartData = {{ data | tojson | safe }};
     const ctx = document.getElementById('stockChart').getContext('2d');
     
     function prepareChartData(period) {
         return chartData[period].map(item => ({
             x: new Date(item.date),
-            y: item.Close
+            y: item.Close,
+            spx: item.SPX_Close
         })).reverse();  // Reverse to get chronological order
     }
 
@@ -202,11 +284,24 @@
                 label: '{{ symbol }} Stock Price',
                 data: prepareChartData('1M'),
                 borderColor: 'rgb(75, 192, 192)',
-                tension: 0.1
+                tension: 0.1,
+                yAxisID: 'y'
+            },
+            {
+                label: 'SPX',
+                data: prepareChartData('1M').map(item => ({x: item.x, y: item.spx})),
+                borderColor: 'rgb(255, 99, 132)',
+                tension: 0.1,
+                yAxisID: 'y1'
             }]
         },
         options: {
             responsive: true,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            stacked: false,
             scales: {
                 x: {
                     type: 'time',
@@ -215,15 +310,27 @@
                     }
                 },
                 y: {
-                    beginAtZero: false
-                }
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                },
             }
         }
     });
 
     // Function to update chart data
     function updateChartData(period) {
-        chart.data.datasets[0].data = prepareChartData(period);
+        const newData = prepareChartData(period);
+        chart.data.datasets[0].data = newData;
+        chart.data.datasets[1].data = newData.map(item => ({x: item.x, y: item.spx}));
         chart.update();
     }
 

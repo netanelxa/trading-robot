@@ -1,3 +1,4 @@
 resources:
-  - sample.yaml
+  - main_web_service.yaml
   - redis-deployment.yaml
+  - ml-service.yaml
