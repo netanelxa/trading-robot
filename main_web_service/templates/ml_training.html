@@ -1,62 +1,107 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ML Model Training</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
-        h1 { color: #333; }
-        form { background: #f4f4f4; padding: 20px; border-radius: 5px; }
-        label { display: block; margin-bottom: 5px; }
-        input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
-        button { display: block; width: 100%; padding: 10px; background: #333; color: #fff; border: none; cursor: pointer; }
-        button:hover { background: #555; }
-        #results { margin-top: 20px; background: #e9e9e9; padding: 20px; border-radius: 5px; }
-    </style>
-</head>
-<body>
-    <h1>ML Model Training</h1>
-    <form id="trainingForm">
-        <label for="ticker">Stock Ticker:</label>
-        <input type="text" id="ticker" name="ticker" required>
-        
-        <label for="modelType">ML Model Type:</label>
-        <select id="modelType" name="modelType">
-            <option value="rf">Random Forest</option>
-            <option value="svm">Support Vector Machine</option>
-            <option value="nn">Neural Network</option>
-        </select>
-        
-        <button type="submit">Train Model</button>
-    </form>
+{% extends "base.html" %}
 
-    <div id="results">
-        <h2>Training Results</h2>
-        <p id="resultText">No results yet. Train a model to see results.</p>
-    </div>
+{% block title %}ML Model Training{% endblock %}
 
-    <script>
-        document.getElementById('trainingForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const ticker = document.getElementById('ticker').value;
-            const modelType = document.getElementById('modelType').value;
-            
-            document.getElementById('resultText').textContent = 'Training in progress...';
-            
-            axios.post('/train_model', {
-                ticker: ticker,
-                model_type: modelType
-            })
-            .then(function (response) {
-                document.getElementById('resultText').textContent = `Training completed: ${response.data.message}`;
-            })
-            .catch(function (error) {
-                document.getElementById('resultText').textContent = `Error: ${error.response.data.error}`;
-            });
+{% block additional_styles %}
+<style>
+    #trainingForm { background: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+    label { display: block; margin-bottom: 5px; }
+    input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
+    button { display: block; width: 100%; padding: 10px; background: #333; color: #fff; border: none; cursor: pointer; }
+    button:hover { background: #555; }
+    #results { margin-top: 20px; background: #e9e9e9; padding: 20px; border-radius: 5px; }
+    #progressBar { width: 100%; background-color: #f3f3f3; }
+    #progressBar div { width: 0%; height: 30px; background-color: #4CAF50; text-align: center; line-height: 30px; color: white; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>ML Model Training</h1>
+<p>Current Model: <span id="currentModel">Loading...</span></p>
+
+<form id="trainingForm">
+    <label for="ticker">Stock Ticker (optional):</label>
+    <input type="text" id="ticker" name="ticker">
+    
+    <label for="modelType">ML Model Type:</label>
+    <select id="modelType" name="modelType">
+        <option value="rf">Random Forest</option>
+        <option value="lr">Linear Regression</option>
+        <option value="svr">Support Vector Regression</option>
+        <option value="xgb">XGBoost</option>
+        <option value="lstm">LSTM</option>
+    </select>
+    
+    <button type="submit">Train Model</button>
+</form>
+
+<div id="progressBar" style="display: none;">
+    <div></div>
+</div>
+
+<div id="results">
+    <h2>Training Results</h2>
+    <p id="resultText">No results yet. Train a model to see results.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+<script>
+    // Fetch current model type when page loads
+    axios.get('/get_current_model')
+        .then(function (response) {
+            document.getElementById('currentModel').textContent = response.data.model_type || 'None';
+        })
+        .catch(function (error) {
+            console.error('Error fetching current model:', error);
         });
-    </script>
-</body>
-</html>
+
+        document.getElementById('trainingForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const ticker = document.getElementById('ticker').value;
+        const modelType = document.getElementById('modelType').value;
+        
+        document.getElementById('resultText').textContent = 'Initializing training...';
+        document.getElementById('progressBar').style.display = 'block';
+        document.querySelector('#progressBar div').style.width = '0%';
+        document.querySelector('#progressBar div').textContent = '0%';
+        
+        const eventSource = new EventSource(`/train_model?ticker=${ticker}&model_type=${modelType}`);
+        
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.progress) {
+                document.querySelector('#progressBar div').style.width = data.progress + '%';
+                document.querySelector('#progressBar div').textContent = data.progress + '%';
+            } else if (data.message) {
+                eventSource.close();
+                document.querySelector('#progressBar div').style.width = '100%';
+                document.querySelector('#progressBar div').textContent = '100%';
+                
+                let resultText = `Training completed: ${data.message}\n\n`;
+                resultText += `Model Type: ${data.result.model_type}\n`;
+                resultText += `Metrics:\n`;
+                for (let [key, value] of Object.entries(data.result.metrics)) {
+                    resultText += `  ${key}: ${value.toFixed(4)}\n`;
+                }
+                if (data.result.feature_importance) {
+                    resultText += `\nFeature Importance:\n`;
+                    for (let [feature, importance] of Object.entries(data.result.feature_importance)) {
+                        resultText += `  ${feature}: ${(importance * 100).toFixed(2)}%\n`;
+                    }
+                }
+                document.getElementById('resultText').textContent = resultText;
+                document.getElementById('currentModel').textContent = data.result.model_type;
+            } else if (data.error) {
+                eventSource.close();
+                document.getElementById('resultText').textContent = `Error: ${data.error}`;
+            }
+        };
+        
+        eventSource.onerror = function(error) {
+            eventSource.close();
+            document.getElementById('resultText').textContent = 'Error: Connection to server lost';
+        };
+    });
+</script>
+{% endblock %}

@@ -105,19 +105,20 @@ def get_stock_data(symbol):
     
     if cached_data:
         cached_data = json.loads(cached_data)
-        last_cached_date = max(datetime.strptime(date, '%Y-%m-%d').date() for date in cached_data.keys())
+        df = pd.DataFrame.from_dict(cached_data, orient='index')
+        df.index = pd.to_datetime(df.index)
+        last_cached_date = df.index.max().date()
         if last_cached_date < end_date:
             start_date = last_cached_date + timedelta(days=1)
             new_data = fetch_and_process_data(symbol, start_date, end_date)
-            update_cache(symbol, new_data)
-            cached_data.update(new_data)
+            new_df = pd.DataFrame.from_dict(new_data, orient='index')
+            df = pd.concat([df, new_df])
+            update_cache(symbol, df.to_dict(orient='index'))
     else:
         start_date = end_date - timedelta(days=365)
-        cached_data = fetch_and_process_data(symbol, start_date, end_date)
-        update_cache(symbol, cached_data)
+        df = pd.DataFrame.from_dict(fetch_and_process_data(symbol, start_date, end_date), orient='index')
+        update_cache(symbol, df.to_dict(orient='index'))
     
-    # Convert the dictionary to a pandas DataFrame
-    df = pd.DataFrame.from_dict(cached_data, orient='index')
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
     
@@ -153,49 +154,40 @@ def get_cached_data(key, fetch_func):
         return data
 
 
-def process_data(data_dict, days):
-    end_date = datetime.now().date() - timedelta(days=1)
-    cutoff_date = (end_date - timedelta(days=days))
-    
-    # Convert string dates to datetime objects
-    data_dict = {pd.to_datetime(k).date(): v for k, v in data_dict.items()}
-    
-    filtered_data = {k: v for k, v in data_dict.items() if k >= cutoff_date}
+def process_data(df):
     return [{
         'date': date.strftime('%Y-%m-%d'),
-        'Close': item['Close'],
-        'Volume': item['Volume'],
-        'SPX_Close': item['SPX_Close']
-    } for date, item in sorted(filtered_data.items(), reverse=True)]
-
+        'Close': row['Close'],
+        'Volume': row['Volume'],
+        'SPX_Close': row['SPX_Close']
+    } for date, row in df.iterrows()]
 
 @app.route('/stock/<symbol>')
 def stock_detail(symbol):
-    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     historical_data = get_stock_data(symbol)
     if historical_data.empty:
         return render_template('error.html', error_message="No data available for this stock.")
 
     data = {
-        '1M': process_data(historical_data.to_dict(orient='index'), 30),
-        '3M': process_data(historical_data.to_dict(orient='index'), 90),
-        '1Y': process_data(historical_data.to_dict(orient='index'), 365)
+        '1M': process_data(historical_data.tail(30)),
+        '3M': process_data(historical_data.tail(90)),
+        '1Y': process_data(historical_data.tail(365))
     }
 
     # Get latest available price
     current_price = api.get_latest_trade(symbol).price
 
     # Calculate metrics
-    high_52week = max(item['High'] for item in historical_data.values())
-    low_52week = min(item['Low'] for item in historical_data.values())
+    high_52week = historical_data['High'].max()
+    low_52week = historical_data['Low'].min()
     
     # Calculate moving averages (already in the data)
-    last_data = list(historical_data.values())[-1]
+    last_data = historical_data.iloc[-1]
     ma_50 = last_data['SMA50']
     ma_200 = last_data['SMA200']
     
     # Calculate percent change
-    prev_close = list(historical_data.values())[-2]['Close']
+    prev_close = historical_data['Close'].iloc[-2]
     percent_change = ((current_price - prev_close) / prev_close) * 100
 
     # Fetch news (unchanged)
@@ -208,7 +200,7 @@ def stock_detail(symbol):
             'published_at': item.created_at.isoformat()
         } for item in news]
 
-    news_data = get_cached_data(f"{symbol}_news", fetch_news)  # Cache for 30 minutes
+    news_data = get_cached_data(f"{symbol}_news", fetch_news)
 
     # Get trade recommendation
     recommendation = get_trade_recommendation(symbol, historical_data)
@@ -243,8 +235,8 @@ def stock_detail(symbol):
                 'wick_bottom_height': wick_bottom_height,
                 'body_position': (high_price - max(open_price, close_price)) / price_range * 50
             })
+
     # ML prediction
-    #'rf' or 'lr', 'svr', 'xgb', 'lstm'
     current_model_type = redis.get('current_model_type')
     if current_model_type:
         current_model_type = current_model_type.decode('utf-8')
@@ -284,11 +276,12 @@ def stock_detail(symbol):
         feature_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
     else:
         feature_importance = None
+
     return render_template('stock_detail.html', 
                            symbol=symbol, 
                            data=data,
                            current_price=current_price,
-                           end_date=datetime.now().date() - timedelta(days=1),
+                           end_date=historical_data.index[-1].date(),
                            high_52week=high_52week,
                            low_52week=low_52week,
                            ma_50=ma_50,
@@ -311,16 +304,12 @@ def get_current_model():
     return jsonify({"model_type": current_model_type.decode('utf-8') if current_model_type else None})
 
 
+
 @app.route('/export/<symbol>')
 def export_data(symbol):
     historical_data = get_stock_data(symbol)
-    if not historical_data:
+    if historical_data.empty:
         return "No data available for this stock.", 404
-    # Convert the historical data to a DataFrame
-    df = pd.DataFrame.from_dict(historical_data, orient='index')
-    df.index = pd.to_datetime(df.index)  # Ensure the index is datetime
-    df.sort_index(ascending=False, inplace=True)  # Sort by date descending
-    df.index.name = 'Date'
     
     # Reorder the columns as requested
     columns_order = [
@@ -338,7 +327,13 @@ def export_data(symbol):
         'CDLHARAMI', 'CDLMORNINGSTAR', 'CDLEVENINGSTAR',
         'CDLPIERCING', 'CDLDARKCLOUDCOVER', 'CDLSPINNINGTOP'
     ]
-    df = df[columns_order]
+    
+    # Filter and reorder columns
+    available_columns = [col for col in columns_order if col in historical_data.columns]
+    df = historical_data[available_columns]
+    
+    df = df.sort_index(ascending=False)  # Sort by date descending
+    df.index.name = 'Date'
     
     # Create a buffer to store the CSV data
     buffer = io.StringIO()
@@ -351,7 +346,6 @@ def export_data(symbol):
         mimetype='text/csv',
         headers={'Content-Disposition': f'attachment;filename={symbol}_historical_data.csv'}
     )
-
 
 
 @app.route('/market-movers')
@@ -403,21 +397,26 @@ def market_movers():
 
 
 
-def train_ml_model(model_type='rf'):
-    all_stocks = redis.smembers('stocks')
-    stock_data = {}
-    for stock in all_stocks:
-        stock_symbol = stock.decode('utf-8')
-        stock_data[stock_symbol] = get_stock_data(stock_symbol).to_dict(orient='index')
+def train_ml_model(ticker=None, model_type='rf'):
+    if ticker:
+        stock_data = {ticker: get_stock_data(ticker).to_dict(orient='index')}
+    else:
+        all_stocks = redis.smembers('stocks')
+        stock_data = {}
+        for stock in all_stocks:
+            stock_symbol = stock.decode('utf-8')
+            stock_data[stock_symbol] = get_stock_data(stock_symbol).to_dict(orient='index')
     
     try:
         response = requests.post(f"{ML_SERVICE_URL}/train", 
                                  json={"data": stock_data, "model_type": model_type})
         if response.status_code == 200:
             result = response.json()
-            # Store the trained model type and metrics in Redis
+            # Store the trained model type, metrics, and feature importance in Redis
             redis.set('current_model_type', model_type)
             redis.set('model_metrics', json.dumps(result['metrics']))
+            if 'feature_importance' in result:
+                redis.set('feature_importance', json.dumps(result['feature_importance']))
             return {
                 "message": "Model trained successfully",
                 "model_type": model_type,
@@ -428,21 +427,32 @@ def train_ml_model(model_type='rf'):
             return {"error": f"Error training model: {response.json().get('error')}"}
     except requests.RequestException as e:
         return {"error": f"Error connecting to ML service: {str(e)}"}
-    
 
+
+
+
+def generate_progress():
+    for i in range(20):
+        time.sleep(0.5)  # Simulate some work
+        yield f"data: {json.dumps({'progress': (i+1)*5})}\n\n"
 
 @app.route('/train_model', methods=['POST'])
 def train_model_endpoint():
     ticker = request.json.get('ticker')
     model_type = request.json.get('model_type', 'rf')  # Default to 'rf' if not specified
-    try:
-        result = train_ml_model(ticker, model_type)
-        return jsonify({
-            "message": f"Model {model_type} trained successfully for {ticker}",
-            "result": result
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    
+    def generate():
+        yield from generate_progress()
+        try:
+            result = train_ml_model(ticker, model_type)
+            if 'error' in result:
+                yield f"data: {json.dumps({'error': result['error']})}\n\n"
+            else:
+                yield f"data: {json.dumps({'message': f'Model {model_type} trained successfully' + (f' for {ticker}' if ticker else ''), 'result': result})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(generate(), content_type='text/event-stream')
 
 @app.route('/ml_training')
 def ml_training():

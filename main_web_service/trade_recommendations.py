@@ -83,11 +83,15 @@ def calculate_indicators(df, spx_data):
 
 def analyze_stock(historical_data):
     # Convert the dictionary to a DataFrame
-    df = pd.DataFrame.from_dict(historical_data, orient='index')
-    
-    # Convert index to datetime and remove timezone information
-    df.index = pd.to_datetime(df.index).tz_localize(None)
-    df = df.sort_index()
+    if not isinstance(historical_data, pd.DataFrame):
+        # Convert the dictionary to a DataFrame if it's not already
+        df = pd.DataFrame.from_dict(historical_data, orient='index')
+        
+        # Convert index to datetime and remove timezone information
+        df.index = pd.to_datetime(df.index).tz_localize(None)
+        df = df.sort_index()
+    else:
+        df = historical_data  # It's already a DataFrame
     
     # Generate recommendation
     last_row = df.iloc[-1]
