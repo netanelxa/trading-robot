@@ -1,42 +1,28 @@
 load('ext://dotenv', 'dotenv')
 dotenv()
 
-# Install argo
-local('echo local')
-
 # Build and watch the trading robot application
 local_resource(
   'trading-robot-bin',
   'echo running trading-robot-bin',
-  deps=[
-    './main_web_service'  # Assuming your app code is still in the 'main_web_service' directory
-  ],
+  deps=['./main_web_service'],
   labels=['build-stuff']
 )
 
-# Build the Docker image
+# Build the Docker image for trading robot
 docker_build(
     "netanelxa/trading-robot:latest",
-    "./main_web_service",  # Dockerfile location
+    "./main_web_service",
     network='host'
 )
 
-# Use the pre-built image from Docker Hub
+# Use the pre-built image from Docker Hub for ML service
 custom_build(
     'netanelxa/ml-service',
-    'docker pull netanelxa/ml-service:latest',
-    deps=[],  # No local dependencies to watch for changes
+    'docker pull netanelxa/ml-service:latest && echo pulled',
+    deps=[],
     tag='latest'
 )
-
-# Push the latest image to Docker Hub after pulling it
-local('docker push netanelxa/ml-service:latest')
-
-# Define the Kubernetes resource and expose it with port forwarding
-k8s_resource('ml-service', port_forwards='5002:5002')
-
-# Optionally add a post-push action, such as logging or updating configurations
-local('echo "Docker image has been pulled and pushed."')
 
 # Create and manage the Alpaca secrets
 local_resource(
@@ -48,12 +34,16 @@ local_resource(
 # Apply Kubernetes configurations
 k8s_yaml(kustomize('kubernetes/sample'))
 
-# Define the Kubernetes resource
+# Define the Kubernetes resources
 k8s_resource(
-  workload='trading-robot',  # Updated to match the new deployment name
+  'trading-robot',
   labels=['trading-robot'],
   port_forwards=5000,
-  resource_deps=[
-    'trading-robot-bin',
-  ],
+  resource_deps=['trading-robot-bin', 'create-alpaca-secrets'],
+)
+
+k8s_resource(
+  'ml-service',
+  port_forwards='5002:5002',
+  resource_deps=['create-alpaca-secrets']
 )

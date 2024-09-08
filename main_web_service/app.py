@@ -22,7 +22,8 @@ app.jinja_env.filters['tojson'] = json.dumps
 serviceName = "web-ui"
 tracer = trace.get_tracer(serviceName + ".tracer")
 
-ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://localhost:5002')
+ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://ml-service:5002')
+
 print(f"ML Service URL: {ML_SERVICE_URL}")  # Add this line for debugging
 
 

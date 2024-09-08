@@ -1,3 +1,4 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,4 +18,15 @@ spec:
         image: netanelxa/ml-service:latest
         ports:
         - containerPort: 5002
-        imagePullPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-service
+spec:
+  selector:
+    app: ml-service
+  ports:
+    - protocol: TCP
+      port: 5002
+      targetPort: 5002

@@ -20,6 +20,8 @@ spec:
         ports:
         - containerPort: 5000
         env:
+        - name: ML_SERVICE_URL
+          value: "http://ml-service:5002"
         - name: REDIS_HOST
           value: "redis"
         - name: REDIS_PORT
