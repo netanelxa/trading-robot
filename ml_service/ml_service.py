@@ -12,37 +12,67 @@ from xgboost import XGBRegressor
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.optimizers import Adam
+import logging
 
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 
 model = None
 scaler = None
 model_type = 'rf'  # default model type
-
 def prepare_data(df, sequence_length=10):
-    # Convert string dates to datetime
-    df.index = pd.to_datetime(df.index)
+    print("Starting prepare_data function")
+    print(f"Initial dataframe shape: {df.shape}")
+    print(f"Initial dataframe dtypes:\n{df.dtypes}")
     
-    # Ensure the index is timezone-aware (localize if necessary)
-    if df.index.tz is None:
-        df.index = df.index.tz_localize('UTC')  # You can adjust the timezone as needed
-
-    df['Target'] = df['Close'].shift(-1)
+    # Ensure all required columns are present
+    required_columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA20', 'SMA50', 'RSI', 'MACD']
+    for col in required_columns:
+        if col not in df.columns:
+            raise ValueError(f"Required column {col} not found in dataframe")
+    
+    # Convert columns to numeric, replacing non-numeric values with NaN
+    for col in required_columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Drop rows with NaN values
     df = df.dropna()
+    print(f"Dataframe shape after dropping NaN: {df.shape}")
     
-    features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA20', 'SMA50', 'RSI', 'MACD']
-    X = df[features]
+    # Calculate target (next day's closing price)
+    df['Target'] = df['Close'].shift(-1)
+    df = df.dropna()  # Drop the last row which will have NaN target
+    print(f"Dataframe shape after calculating target: {df.shape}")
+    
+    # Prepare features and target
+    X = df[required_columns]
     y = df['Target']
     
+    print(f"Feature shape: {X.shape}")
+    print(f"Target shape: {y.shape}")
+    
+    # Scale features
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
+    # Prepare sequences
     X_seq, y_seq = [], []
     for i in range(len(X_scaled) - sequence_length):
         X_seq.append(X_scaled[i:i+sequence_length])
         y_seq.append(y.iloc[i+sequence_length])
     
-    return train_test_split(np.array(X_seq), np.array(y_seq), test_size=0.2, random_state=42), scaler
+    X_seq = np.array(X_seq)
+    y_seq = np.array(y_seq)
+    
+    print(f"Final X shape: {X_seq.shape}")
+    print(f"Final y shape: {y_seq.shape}")
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X_seq, y_seq, test_size=0.2, random_state=42)
+    
+    print("Finished prepare_data function")
+    return (X_train, X_test, y_train, y_test), scaler
+
 
 def create_model(model_type, input_shape=None):
     if model_type == 'rf':
@@ -84,48 +114,72 @@ def predict_next_close(model, scaler, latest_data, model_type):
 @app.route('/train', methods=['POST'])
 def train():
     global model, scaler, model_type
-    stock_data_dict = request.json['data']
-    model_type = request.json.get('model_type', 'rf')
-    
-    all_data = []
-    for symbol, data in stock_data_dict.items():
-        df = pd.DataFrame.from_dict(data, orient='index')
-        df['Symbol'] = symbol
-        all_data.append(df)
-    
-    combined_df = pd.concat(all_data, ignore_index=True)
-    (X_train, X_test, y_train, y_test), scaler = prepare_data(combined_df)
-    
-    model = train_model(X_train, y_train, model_type)
-    
-    # Make predictions on test set
-    if model_type == 'lstm':
-        y_pred = model.predict(X_test)
-    else:
-        y_pred = model.predict(X_test.reshape(X_test.shape[0], -1))
-    
-    # Calculate metrics
-    mse = mean_squared_error(y_test, y_pred)
-    rmse = np.sqrt(mse)
-    r2 = r2_score(y_test, y_pred)
-    
-    metrics = {
-        "mse": mse,
-        "rmse": rmse,
-        "r2": r2
-    }
-    
-    # Get feature importance if available
-    feature_importance = None
-    if model_type in ['rf', 'xgb']:
-        feature_importance = model.feature_importances_.tolist()
-    
-    return jsonify({
-        "message": f"Model {model_type} trained successfully",
-        "metrics": metrics,
-        "feature_importance": feature_importance
-    }), 200
-
+    print("Received training request")
+    try:
+        stock_data_dict = request.json['data']
+        model_type = request.json.get('model_type', 'rf')
+        print(f"Received data for {len(stock_data_dict)} stocks")
+        print(f"Model type: {model_type}")
+        
+        all_data = []
+        for symbol, data in stock_data_dict.items():
+            df = pd.DataFrame.from_dict(data, orient='index')
+            df['Symbol'] = symbol
+            all_data.append(df)
+        
+        combined_df = pd.concat(all_data, ignore_index=True)
+        print(f"Combined data shape: {combined_df.shape}")
+        print(f"Combined data dtypes:\n{combined_df.dtypes}")
+        
+        try:
+            (X_train, X_test, y_train, y_test), scaler = prepare_data(combined_df)
+        except Exception as e:
+            print(f"Error in prepare_data: {str(e)}")
+            raise
+        
+        print(f"Training data shape: {X_train.shape}")
+        print(f"Test data shape: {X_test.shape}")
+        
+        model = train_model(X_train, y_train, model_type)
+        
+        # Make predictions on test set
+        if model_type == 'lstm':
+            y_pred = model.predict(X_test)
+        else:
+            y_pred = model.predict(X_test.reshape(X_test.shape[0], -1))
+        
+        print(f"y_test dtype: {y_test.dtype}")
+        print(f"y_pred dtype: {y_pred.dtype}")
+        
+        # Calculate metrics
+        try:
+            mse = mean_squared_error(y_test, y_pred)
+            rmse = np.sqrt(mse)
+            r2 = r2_score(y_test, y_pred)
+        except Exception as e:
+            print(f"Error calculating metrics: {str(e)}")
+            raise
+        
+        metrics = {
+            "mse": float(mse),
+            "rmse": float(rmse),
+            "r2": float(r2)
+        }
+        
+        # Get feature importance if available
+        feature_importance = None
+        if model_type in ['rf', 'xgb']:
+            feature_importance = model.feature_importances_.tolist()
+        
+        print("Training completed successfully")
+        return jsonify({
+            "message": f"Model {model_type} trained successfully",
+            "metrics": metrics,
+            "feature_importance": feature_importance
+        }), 200
+    except Exception as e:
+        print(f"Error during training: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/predict', methods=['POST'])
 def predict():

@@ -15,12 +15,15 @@ import inspect
 import requests
 import threading
 import uuid
-
+import logging
 
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
+
+
 app.jinja_env.filters['tojson'] = json.dumps
 serviceName = "web-ui"
-tracer = trace.get_tracer(serviceName + ".tracer")
+# tracer = trace.get_tracer(serviceName + ".tracer")
 
 ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://ml-service:5002')
 
@@ -46,39 +49,58 @@ api = REST(key_id=os.environ.get('APCA_API_KEY_ID'),  # Corrected env var name
 
 @app.route('/')
 def index():
-    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
+    # tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     return render_template('index.html')
 
 
-def fetch_and_process_data(symbol, start_date, end_date):
-    bars = api.get_bars(
-        symbol, 
-        TimeFrame.Day, 
-        start_date.isoformat(), 
-        end_date.isoformat(),
-        adjustment='raw'
-    ).df
-    # Fetch SPX data for the same period
-    spx_bars = api.get_bars(
-        'SPY',  # Using SPY as a proxy for SPX
-        TimeFrame.Day, 
-        start_date.isoformat(), 
-        end_date.isoformat(),
-        adjustment='raw'
-    ).df
+def fetch_and_process_data(symbol, start_date=None, end_date=None):
+    end_date = end_date or (datetime.now().date() - timedelta(days=1))  # Use yesterday's date
+    start_date = start_date or (end_date - timedelta(days=365))
 
-    # Ensure both dataframes have the same index and remove timezone info
-    bars.index = bars.index.tz_convert(None)
-    spx_bars.index = spx_bars.index.tz_convert(None)
-    bars = bars.reindex(spx_bars.index)
-    spx_bars = spx_bars.reindex(bars.index)
+    print(f"Fetching data for {symbol} from {start_date} to {end_date}")
     
-    # Calculate indicators
-    df = calculate_indicators(bars, spx_bars)   
-    
-    # Convert DataFrame to dictionary
-    return df.to_dict('index')
+    try:
+        bars = api.get_bars(
+            symbol, 
+            TimeFrame.Day, 
+            start=start_date.isoformat(), 
+            end=end_date.isoformat(),
+            adjustment='raw'
+        ).df
+        
+        print(f"Bars shape: {bars.shape}")
+        print(f"Bars head:\n{bars.head()}")
+        
+        # Fetch SPX data for the same period
+        spx_bars = api.get_bars(
+            'SPY',  # Using SPY as a proxy for SPX
+            TimeFrame.Day, 
+            start=start_date.isoformat(), 
+            end=end_date.isoformat(),
+            adjustment='raw'
+        ).df
+        
+        print(f"SPX bars shape: {spx_bars.shape}")
+        print(f"SPX bars head:\n{spx_bars.head()}")
+        
+        if bars.empty or spx_bars.empty:
+            print("Error: One or both DataFrames are empty")
+            return None
 
+        # Ensure both dataframes have the same index and remove timezone info
+        bars.index = bars.index.tz_convert(None)
+        spx_bars.index = spx_bars.index.tz_convert(None)
+        bars = bars.reindex(spx_bars.index)
+        spx_bars = spx_bars.reindex(bars.index)
+        
+        # Calculate indicators
+        df = calculate_indicators(bars, spx_bars)   
+        
+        # Convert DataFrame to dictionary
+        return df.to_dict('index')
+    except api.rest.APIError as e:
+        print(f"Alpaca API Error: {str(e)}")
+        return None
 
 def update_cache(symbol, new_data):
     cached_data = redis.get(symbol)
@@ -104,7 +126,7 @@ def update_cache(symbol, new_data):
 
 
 def get_stock_data(symbol):
-    end_date = datetime.now().date() - timedelta(days=1)
+    end_date = datetime.now().date() - timedelta(days=1)  # Use yesterday's date
     cached_data = redis.get(symbol)
     
     if cached_data:
@@ -115,13 +137,18 @@ def get_stock_data(symbol):
         if last_cached_date < end_date:
             start_date = last_cached_date + timedelta(days=1)
             new_data = fetch_and_process_data(symbol, start_date, end_date)
-            new_df = pd.DataFrame.from_dict(new_data, orient='index')
-            df = pd.concat([df, new_df])
-            update_cache(symbol, df.to_dict(orient='index'))
+            if new_data:
+                new_df = pd.DataFrame.from_dict(new_data, orient='index')
+                df = pd.concat([df, new_df])
+                update_cache(symbol, df.to_dict(orient='index'))
     else:
         start_date = end_date - timedelta(days=365)
-        df = pd.DataFrame.from_dict(fetch_and_process_data(symbol, start_date, end_date), orient='index')
-        update_cache(symbol, df.to_dict(orient='index'))
+        data = fetch_and_process_data(symbol, start_date, end_date)
+        if data:
+            df = pd.DataFrame.from_dict(data, orient='index')
+            update_cache(symbol, df.to_dict(orient='index'))
+        else:
+            return pd.DataFrame()  # Return an empty DataFrame if no data was fetched
     
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
@@ -130,7 +157,7 @@ def get_stock_data(symbol):
 
 @app.route('/add-stock', methods=['GET', 'POST'])
 def add_stock():
-    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
+    # tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     message = None
     if request.method == 'POST':
         symbol = request.form['symbol'].upper()
@@ -143,7 +170,7 @@ def add_stock():
 
 @app.route('/stocks')
 def list_stocks():
-    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
+    # tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     stocks = redis.smembers('stocks')
     return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
 
@@ -412,14 +439,19 @@ def train_ml_model(ticker=None, model_type='rf'):
     
     # Convert Timestamp index to string and handle non-JSON-compliant floats
     for symbol, data in stock_data.items():
-        stock_data[symbol] = {
-            k.strftime('%Y-%m-%d'): {kk: json_serialize(vv) for kk, vv in v.items()}
-            for k, v in data.items()
-        }
+        stock_data[symbol] = {k.isoformat(): {kk: json_serialize(vv) for kk, vv in v.items()} for k, v in data.items()}
     
     try:
+        print(f"Sending request to ML service: {ML_SERVICE_URL}/train")
+        print(f"Request data: {json.dumps({'data': stock_data, 'model_type': model_type})[:1000]}...")  # Print first 1000 chars
+        
         response = requests.post(f"{ML_SERVICE_URL}/train", 
-                                 json={"data": stock_data, "model_type": model_type})
+                                 json={"data": stock_data, "model_type": model_type},
+                                 timeout=30)  # Add a timeout
+        
+        print(f"Response status code: {response.status_code}")
+        print(f"Response content: {response.text[:1000]}...")  # Print first 1000 chars of response
+        
         if response.status_code == 200:
             result = response.json()
             # Store the trained model type and metrics in Redis
@@ -434,11 +466,17 @@ def train_ml_model(ticker=None, model_type='rf'):
                 "feature_importance": result.get('feature_importance')
             }
         else:
-            return {"error": f"Error training model: {response.json().get('error')}"}
+            return {"error": f"Error training model: {response.text}"}
     except requests.RequestException as e:
+        print(f"Request Exception: {str(e)}")
         return {"error": f"Error connecting to ML service: {str(e)}"}
     except json.JSONDecodeError as e:
+        print(f"JSON Decode Error: {str(e)}")
         return {"error": f"Error decoding JSON response from ML service: {str(e)}"}
+    except Exception as e:
+        print(f"Unexpected Error: {str(e)}")
+        return {"error": f"Unexpected error: {str(e)}"}
+
 
 # Global dictionary to store training status
 training_tasks = {}

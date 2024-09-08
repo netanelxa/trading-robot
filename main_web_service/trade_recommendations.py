@@ -8,6 +8,10 @@ from ta.volatility import BollingerBands
 
 
 def calculate_indicators(df, spx_data):
+    print(f"before lower: {df.columns}")
+    df.columns = df.columns.str.lower()
+    print(f"after lower{df.columns}")
+    spx_data.columns = spx_data.columns.str.lower()
     open_data = df['open'].values
     high_data = df['high'].values
     low_data = df['low'].values
