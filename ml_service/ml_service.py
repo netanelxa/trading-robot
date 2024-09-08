@@ -20,6 +20,13 @@ scaler = None
 model_type = 'rf'  # default model type
 
 def prepare_data(df, sequence_length=10):
+    # Convert string dates to datetime
+    df.index = pd.to_datetime(df.index)
+    
+    # Ensure the index is timezone-aware (localize if necessary)
+    if df.index.tz is None:
+        df.index = df.index.tz_localize('UTC')  # You can adjust the timezone as needed
+
     df['Target'] = df['Close'].shift(-1)
     df = df.dropna()
     

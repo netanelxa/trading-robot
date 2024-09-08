@@ -412,7 +412,10 @@ def train_ml_model(ticker=None, model_type='rf'):
     
     # Convert Timestamp index to string and handle non-JSON-compliant floats
     for symbol, data in stock_data.items():
-        stock_data[symbol] = {k.isoformat(): {kk: json_serialize(vv) for kk, vv in v.items()} for k, v in data.items()}
+        stock_data[symbol] = {
+            k.strftime('%Y-%m-%d'): {kk: json_serialize(vv) for kk, vv in v.items()}
+            for k, v in data.items()
+        }
     
     try:
         response = requests.post(f"{ML_SERVICE_URL}/train", 
@@ -455,11 +458,15 @@ def train_model_task(task_id, ticker, model_type):
             "result": serialized_result
         }
     except Exception as e:
+        print(f"Error in train_model_task: {str(e)}")
+        print(f"Error type: {type(e)}")
+        if hasattr(e, 'response'):
+            print(f"Response content: {e.response.content}")
         training_tasks[task_id] = {
             "status": "failed",
             "error": str(e)
         }
-
+        
 def json_serialize(obj):
     if isinstance(obj, (int, float, np.integer, np.floating)):
         return str(obj)  # Convert numeric types to string
