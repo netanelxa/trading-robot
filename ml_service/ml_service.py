@@ -17,6 +17,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.optimizers import Adam
 import logging
+import traceback
 from redis import Redis
 
 
@@ -31,7 +32,6 @@ model = None
 scaler = None
 model_type = 'rf'  # default model type
 prepared_data = None
-
 
 def get_stock_data_from_redis(symbol):
     data = redis_client.get(symbol)
@@ -145,17 +145,42 @@ def predict_next_close(model, scaler, latest_data, model_type):
 def train():
     global model, scaler, model_type, prepared_data
     print("Received training request")
+    print(f"Request JSON: {request.json}")  # Print the entire request JSON
+    
     try:
+        # Check if 'symbol' is in the request JSON
+        if 'symbol' not in request.json:
+            print("Error: 'symbol' not found in request JSON")
+            return jsonify({"error": "'symbol' is required"}), 400
+        
         symbol = request.json['symbol']
         model_type = request.json.get('model_type', 'rf')
         print(f"Training for symbol: {symbol}")
         print(f"Model type: {model_type}")
         
-        (X_train, X_test, y_train, y_test), scaler, prepared_data = prepare_data(symbol)
+        # Get stock data
+        df = get_stock_data_from_redis(symbol)
+        if df.empty:
+            print(f"Error: No data available for symbol {symbol}")
+            return jsonify({"error": f"No data available for symbol {symbol}"}), 400
         
+        print(f"Data shape for {symbol}: {df.shape}")
+        print(f"Data columns: {df.columns}")
+        print(f"First few rows of data:\n{df.head()}")
+        
+        # Prepare data
+        (X_train, X_test, y_train, y_test), scaler, prepared_data = prepare_data(df)
+        
+        print(f"Prepared data shapes:")
+        print(f"X_train: {X_train.shape}")
+        print(f"X_test: {X_test.shape}")
+        print(f"y_train: {y_train.shape}")
+        print(f"y_test: {y_test.shape}")
+        
+        # Train model
         model = train_model(X_train, y_train, model_type)
         
-        # Make predictions on test set
+        # Make predictions
         if model_type == 'lstm':
             y_pred = model.predict(X_test)
         else:
@@ -185,6 +210,7 @@ def train():
         }), 200
     except Exception as e:
         print(f"Error during training: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
     
 
@@ -316,4 +342,5 @@ def catch_all(path):
     return jsonify({"message": f"Undefined route: {path}"}), 404
 
 if __name__ == '__main__':
+    print("ML Service is starting up...")
     app.run(host='0.0.0.0', port=5002)

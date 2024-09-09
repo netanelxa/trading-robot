@@ -24,8 +24,9 @@
 
 <form id="trainingForm">
     <label for="symbol">Stock Symbol:</label>
-    <input type="text" id="symbol" name="symbol" required>
-    
+    <select id="symbol" name="symbol" required>
+        <option value="">Select a stock</option>
+    </select>
     <label for="modelType">ML Model Type:</label>
     <select id="modelType" name="modelType">
         <option value="rf">Random Forest</option>
@@ -184,5 +185,29 @@ function displayResults(result) {
     resultsElement.innerHTML += '<br><a href="/download_prepared_data" download>Download Prepared Data</a>';
     resultsElement.innerHTML += '<br><a href="/view_prepared_data" target="_blank">View Prepared Data</a>';
 }
+
+function populateStockDropdown() {
+    axios.get('/stocks', {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function (response) {
+        const select = document.getElementById('symbol');
+        response.data.forEach(function(stock) {
+            const option = document.createElement('option');
+            option.value = stock;
+            option.textContent = stock;
+            select.appendChild(option);
+        });
+    })
+    .catch(function (error) {
+        console.error('Error fetching watched stocks:', error);
+    });
+}
+document.addEventListener('DOMContentLoaded', function() {
+    populateStockDropdown();
+    // ... other initialization code ...
+});
 </script>
 {% endblock %}

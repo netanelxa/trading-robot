@@ -170,10 +170,10 @@ def add_stock():
 
 @app.route('/stocks')
 def list_stocks():
-    # tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
-    stocks = redis.smembers('stocks')
-    return render_template('stocks.html', stocks=[stock.decode('utf-8') for stock in stocks])
-
+    stocks = [stock.decode('utf-8') for stock in redis.smembers('stocks')]
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify(stocks)
+    return render_template('stocks.html', stocks=stocks)
 
 def get_cached_data(key, fetch_func):
     cached_data = redis.get(key)
@@ -487,10 +487,15 @@ def serialize_for_json(obj):
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
+
 def train_model_task(task_id, symbol, model_type):
     try:
+        print(f"Starting training task for symbol: {symbol}, model type: {model_type}")
         response = requests.post(f"{ML_SERVICE_URL}/train", 
                                  json={"symbol": symbol, "model_type": model_type})
+        print(f"Response status code: {response.status_code}")
+        print(f"Response content: {response.text}")
+        
         if response.status_code == 200:
             result = response.json()
             training_tasks[task_id] = {
@@ -500,14 +505,15 @@ def train_model_task(task_id, symbol, model_type):
         else:
             training_tasks[task_id] = {
                 "status": "failed",
-                "error": f"ML service returned status code {response.status_code}"
+                "error": f"ML service returned status code {response.status_code}: {response.text}"
             }
     except Exception as e:
+        print(f"Exception in train_model_task: {str(e)}")
         training_tasks[task_id] = {
             "status": "failed",
             "error": str(e)
         }
-        
+
 def json_serialize(obj):
     if isinstance(obj, (int, float, np.integer, np.floating)):
         return str(obj)  # Convert numeric types to string
