@@ -266,19 +266,28 @@ def stock_detail(symbol):
                 'wick_bottom_height': wick_bottom_height,
                 'body_position': (high_price - max(open_price, close_price)) / price_range * 50
             })
-
-    # ML prediction
-    current_model_type = redis.get('current_model_type')
-    print(f"Current model type from Redis: {current_model_type}")
-
-    if current_model_type:
-        current_model_type = current_model_type.decode('utf-8')
-        print(f"Decoded current model type: {current_model_type}")
+  # ML prediction
+    symbol_model_type = redis.get(f"{symbol}_model_type")
+    if symbol_model_type:
+        current_model_type = symbol_model_type.decode('utf-8')
         try:
-            print(f"Sending prediction request to ML service: {ML_SERVICE_URL}/predict")
-            response = requests.post(f"{ML_SERVICE_URL}/predict", 
-                                    json={"data": historical_data.to_dict(orient='index'),
-                                        "model_type": current_model_type})
+            # Convert historical_data to a serializable format
+            serializable_data = {
+                date.isoformat(): {
+                    key: json_serialize(value) 
+                    for key, value in row.items()
+                }
+                for date, row in historical_data.iterrows()
+            }
+            
+            response = requests.post(
+                f"{ML_SERVICE_URL}/predict", 
+                json={
+                    "symbol": symbol,
+                    "data": serializable_data
+                },
+                timeout=10  # Add a timeout to prevent hanging
+            )
             print(f"Prediction response status code: {response.status_code}")
             print(f"Prediction response content: {response.text[:1000]}...")  # Print first 1000 chars of response
             
@@ -299,39 +308,28 @@ def stock_detail(symbol):
             confidence = None
             forecast = None
     else:
-        print("No current model type found in Redis")
+        print(f"No model type found for symbol {symbol}")
+        current_model_type = None
         prediction = None
         confidence = None
         forecast = None
-
-    # Fetch model metrics and feature importance
-    model_metrics = redis.get('model_metrics')
-    print(f"Model metrics from Redis: {model_metrics}")
-    if model_metrics:
-        model_metrics = json.loads(model_metrics.decode('utf-8'))
-        print(f"Decoded model metrics: {model_metrics}")
+        # Fetch model metrics and feature importance
+    model_metrics_data = redis.get(f"{symbol}_model_metrics")
+    if model_metrics_data:
+        model_metrics = json.loads(model_metrics_data.decode('utf-8'))
+        print(f"Model metrics: {model_metrics}")
     else:
-        print("No model metrics found in Redis")
+        print(f"No model metrics found for symbol {symbol}")
         model_metrics = None
-
-    feature_importance = redis.get('feature_importance')
-    print(f"Feature importance from Redis: {feature_importance}")
-    if feature_importance:
-        feature_importance = json.loads(feature_importance.decode('utf-8'))
+    feature_importance_data = redis.get(f"{symbol}_feature_importance")
+    if feature_importance_data:
+        feature_importance = json.loads(feature_importance_data.decode('utf-8'))
         # Sort feature importance in descending order
         feature_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-        print(f"Decoded and sorted feature importance: {feature_importance[:5]}...")  # Print first 5 items
+        print(f"Feature importance (top 5): {feature_importance[:5]}")
     else:
-        print("No feature importance found in Redis")
+        print(f"No feature importance found for symbol {symbol}")
         feature_importance = None
-
-    print(f"Final values being passed to template:")
-    print(f"prediction: {prediction}")
-    print(f"confidence: {confidence}")
-    print(f"forecast: {forecast}")
-    print(f"current_model_type: {current_model_type}")
-    print(f"model_metrics: {model_metrics}")
-    print(f"feature_importance: {feature_importance[:5] if feature_importance else None}")
     return render_template('stock_detail.html', 
                            symbol=symbol, 
                            data=data,
@@ -529,6 +527,8 @@ def json_serialize(obj):
         return str(obj)  # Convert numeric types to string
     elif isinstance(obj, np.ndarray):
         return obj.tolist()  # Convert numpy arrays to lists
+    elif isinstance(obj, (datetime, pd.Timestamp)):
+        return obj.isoformat()  # Convert datetime objects to ISO format string
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 

@@ -20,6 +20,8 @@ import logging
 import traceback
 from redis import Redis
 from urllib.parse import urlparse
+import pickle
+
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
@@ -57,11 +59,24 @@ def get_stock_data_from_redis(symbol):
     return pd.DataFrame()
 
 
-def prepare_data(df, sequence_length=10):
+def prepare_data(df, symbol,sequence_length=10):
     print(f"Preparing data")
     
     if df.empty:
         raise ValueError(f"No data available")
+
+    features = [
+        'Open', 'High', 'Low', 'Close', 'Volume', 'VWAP',
+        'SPX_Close', 'SMA20', 'SMA50', 'SMA150', 'SMA200',
+        'MACD', 'MACD_signal', 'RSI', 'CCI',
+        'BB_upper', 'BB_middle', 'BB_lower', 'BB_width', 'BB_percentage',
+        'EMA20', 'HT_TRENDLINE', 'STOCH_K', 'STOCH_D',
+        'WILLR', 'AD', 'OBV', 'ATR', 'NATR'
+    ]
+
+    # Save the feature list
+    redis_client.set(f"{symbol}_features", json.dumps(features))
+
 
     print(f"Initial dataframe shape: {df.shape}")
     print(f"Initial dataframe columns: {df.columns}")
@@ -118,7 +133,8 @@ def prepare_data(df, sequence_length=10):
     X_train, X_test, y_train, y_test = train_test_split(X_seq, y_seq, test_size=0.2, random_state=42)
 
     print("Finished prepare_data function")
-    return (X_train, X_test, y_train, y_test), scaler, df
+    return (X_train, X_test, y_train, y_test), scaler, df, features
+
 
 
 def create_model(model_type, input_shape=None):
@@ -141,7 +157,9 @@ def create_model(model_type, input_shape=None):
     else:
         raise ValueError("Invalid model type")
 
-def train_model(X_train, y_train, model_type):
+def train_model(X_train, y_train, model_type, symbol, features):
+    redis_client.set(f"{symbol}_features", json.dumps(features))
+    
     model = create_model(model_type, input_shape=(X_train.shape[1], X_train.shape[2]))
     if model_type == 'lstm':
         model.fit(X_train, y_train, epochs=50, batch_size=32, verbose=0)
@@ -149,22 +167,36 @@ def train_model(X_train, y_train, model_type):
         model.fit(X_train.reshape(X_train.shape[0], -1), y_train)
     return model
 
-def predict_next_close(model, scaler, latest_data, model_type):
+def predict_next_close(model, scaler, latest_data, model_type, symbol):
+    print("in predict next close")
+    features = json.loads(redis_client.get(f"{symbol}_features"))
+    
+    # Convert to DataFrame if it's a numpy array
+    if isinstance(latest_data, np.ndarray):
+        latest_data = pd.DataFrame(latest_data, columns=features)
+    
+    # Check for missing features and add them with default values (e.g., 0)
+    for feature in features:
+        if feature not in latest_data.columns:
+            latest_data[feature] = 0
+    
+    # Ensure the order of features matches the training order
+    latest_data = latest_data[features]
+    
+    latest_scaled = scaler.transform(latest_data)
     if model_type == 'lstm':
-        latest_scaled = scaler.transform(latest_data)
         return model.predict(np.array([latest_scaled]))[0][0]
     else:
-        latest_scaled = scaler.transform(latest_data)
         return model.predict(latest_scaled.reshape(1, -1))[0]
+
 
 @app.route('/train', methods=['POST'])
 def train():
     global model, scaler, model_type, prepared_data
     print("Received training request")
-    print(f"Request JSON: {request.json}")  # Print the entire request JSON
+    print(f"Request JSON: {request.json}")
     
     try:
-        # Check if 'symbol' is in the request JSON
         if 'symbol' not in request.json:
             print("Error: 'symbol' not found in request JSON")
             return jsonify({"error": "'symbol' is required"}), 400
@@ -173,8 +205,6 @@ def train():
         model_type = request.json.get('model_type', 'rf')
         print(f"Training for symbol: {symbol}")
         print(f"Model type: {model_type}")
-        
-        # Get stock data
         df = get_stock_data_from_redis(symbol)
         if df.empty:
             print(f"Error: No data available for symbol {symbol}")
@@ -184,25 +214,24 @@ def train():
         print(f"Data columns: {df.columns}")
         print(f"First few rows of data:\n{df.head()}")
         
-        # Prepare data
-        (X_train, X_test, y_train, y_test), scaler, prepared_data = prepare_data(df)
-        
+        (X_train, X_test, y_train, y_test), scaler, prepared_data, features = prepare_data(df, symbol)
+   
+        app.logger.info(f"Number of features in training data: {X_train.shape[1]}")
+        app.logger.info(f"Features in training data: {list(prepared_data.columns)}")
+
         print(f"Prepared data shapes:")
         print(f"X_train: {X_train.shape}")
         print(f"X_test: {X_test.shape}")
         print(f"y_train: {y_train.shape}")
         print(f"y_test: {y_test.shape}")
         
-        # Train model
-        model = train_model(X_train, y_train, model_type)
+        model = train_model(X_train, y_train, model_type, symbol, features)
         
-        # Make predictions
         if model_type == 'lstm':
             y_pred = model.predict(X_test)
         else:
             y_pred = model.predict(X_test.reshape(X_test.shape[0], -1))
         
-        # Calculate metrics
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
         r2 = r2_score(y_test, y_pred)
@@ -213,10 +242,19 @@ def train():
             "r2": float(r2)
         }
         
-        # Get feature importance if available
         feature_importance = None
         if model_type in ['rf', 'xgb']:
             feature_importance = dict(zip(prepared_data.columns, model.feature_importances_))
+        
+        # Save results to Redis
+        redis_client.set(f"{symbol}_model_type", model_type)
+        redis_client.set(f"{symbol}_model_metrics", json.dumps(metrics))
+        if feature_importance:
+            redis_client.set(f"{symbol}_feature_importance", json.dumps(feature_importance))
+        
+        # Save model and scaler
+        redis_client.set(f"{symbol}_model", pickle.dumps(model))
+        redis_client.set(f"{symbol}_scaler", pickle.dumps(scaler))
         
         print("Training completed successfully")
         return jsonify({
@@ -228,54 +266,95 @@ def train():
         print(f"Error during training: {str(e)}")
         print(f"Full traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
-    
 
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    global model, scaler, model_type
-    if model is None:
-        return jsonify({"error": "Model not trained"}), 400
-    
-    data = request.json['data']
-    model_type = request.json.get('model_type', 'rf')
-    df = pd.DataFrame.from_dict(data, orient='index')
-    df = df.sort_index(ascending=True)  # Ensure data is in chronological order
-    features = ['Open', 'High', 'Low', 'Close', 'Volume', 'SMA20', 'SMA50', 'RSI', 'MACD']
-    latest_data = df[features].tail(10)  # Get last 10 days of data
-    
-    prediction = predict_next_close(model, scaler, latest_data, model_type)
-    
-    # Calculate confidence interval (example for RandomForest)
-    if model_type == 'rf':
-        predictions = []
-        for estimator in model.estimators_:
-            if model_type == 'lstm':
-                pred = estimator.predict(np.array([scaler.transform(latest_data)]))[0][0]
-            else:
-                pred = estimator.predict(scaler.transform(latest_data).reshape(1, -1))[0]
-            predictions.append(pred)
-        confidence_interval = stats.t.interval(0.95, len(predictions)-1, loc=np.mean(predictions), scale=stats.sem(predictions))
-    else:
-        confidence_interval = None
-    
-    # Generate a short-term forecast (next 5 days)
-    forecast = []
-    temp_data = latest_data.copy()
-    for _ in range(5):
-        next_pred = predict_next_close(model, scaler, temp_data, model_type)
-        forecast.append(float(next_pred))
-        new_row = temp_data.iloc[-1].copy()
-        new_row['Close'] = next_pred
-        temp_data = temp_data.append(new_row, ignore_index=True)
-        temp_data = temp_data.iloc[1:]  # Remove the oldest day
-    
-    return jsonify({
-        "prediction": float(prediction),
-        "confidence_interval": confidence_interval,
-        "forecast": forecast
-    }), 200
+    try:
+        if 'symbol' not in request.json:
+            return jsonify({"error": "Symbol is required"}), 400
+        
+        symbol = request.json['symbol']
+        data = request.json['data']
+        
+        app.logger.info(f"Received prediction request for symbol: {symbol}")
+        app.logger.debug(f"Input data: {data}")
+        
+        model_type = redis_client.get(f"{symbol}_model_type")
+        if not model_type:
+            return jsonify({"error": "Model not trained for this symbol"}), 400
+        
+        model_type = model_type.decode('utf-8')
+        app.logger.info(f"Model type: {model_type}")
+        
+        model = pickle.loads(redis_client.get(f"{symbol}_model"))
+        scaler = pickle.loads(redis_client.get(f"{symbol}_scaler"))
+        
+        # Convert the data back to a DataFrame
+        df = pd.DataFrame.from_dict(data, orient='index')
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index(ascending=True)
+        
+        app.logger.debug(f"Processed DataFrame shape: {df.shape}")
+        
+        # Convert columns back to appropriate types
+        for col in df.columns:
+            try:
+                df[col] = pd.to_numeric(df[col])
+            except ValueError:
+                # Column couldn't be converted to numeric, leave it as is
+                pass        
 
+        features = json.loads(redis_client.get(f"{symbol}_features"))
+        app.logger.info(f"Number of features used in training: {len(features)}")
+        app.logger.info(f"Features used in training: {features}")
+        
+        # Ensure all required features are present
+        for feature in features:
+            if feature not in df.columns:
+                df[feature] = 0  # or use a more sophisticated imputation method
+        
+        df = df[features]
+        latest_data = df.tail(10)
+        app.logger.info(f"Number of features in prediction data: {latest_data.shape[1]}")
+        app.logger.debug(f"Latest data shape: {latest_data.shape}")
+        
+        prediction = predict_next_close(model, scaler, latest_data, model_type, symbol)
+        app.logger.info(f"Prediction successful: {prediction}")
+        
+        # Calculate confidence interval (for RandomForest)
+        if model_type == 'rf':
+            predictions = []
+            for estimator in model.estimators_:
+                if model_type == 'lstm':
+                    pred = estimator.predict(np.array([scaler.transform(latest_data)]))[0][0]
+                else:
+                    pred = estimator.predict(scaler.transform(latest_data).reshape(1, -1))[0]
+                predictions.append(pred)
+            confidence_interval = stats.t.interval(0.95, len(predictions)-1, loc=np.mean(predictions), scale=stats.sem(predictions))
+        else:
+            confidence_interval = None
+        
+        # Generate a short-term forecast (next 5 days)
+        forecast = []
+        temp_data = latest_data.copy()
+        for _ in range(5):
+            next_pred = predict_next_close(model, scaler, temp_data, model_type, symbol)
+            forecast.append(float(next_pred))
+            new_row = temp_data.iloc[-1].copy()
+            new_row['Close'] = next_pred
+            temp_data = pd.concat([temp_data.iloc[1:], pd.DataFrame([new_row])], ignore_index=True)
+        
+        return jsonify({
+            "prediction": float(prediction),
+            "confidence_interval": confidence_interval,
+            "forecast": forecast
+        }), 200
+    except Exception as e:
+        app.logger.error(f"Error in prediction: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/download_prepared_data', methods=['GET'])
 def download_prepared_data():

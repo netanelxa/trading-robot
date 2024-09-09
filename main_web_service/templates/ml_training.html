@@ -41,8 +41,7 @@
 </form>
 
 
-<a href="/download_prepared_data" download>Download Prepared Data</a>
-<a href="/view_prepared_data" target="_blank">View Prepared Data</a>
+
 <div id="trainingStatus"></div>
 
 <div id="progressBar" style="display: none;">
@@ -193,6 +192,7 @@ function displayResults(result) {
     const resultsElement = document.getElementById('results');
     resultsElement.innerHTML += '<br><a href="/download_prepared_data" download>Download Prepared Data</a>';
     resultsElement.innerHTML += '<br><a href="/view_prepared_data" target="_blank">View Prepared Data</a>';
+
 }
 
 function populateStockDropdown() {
