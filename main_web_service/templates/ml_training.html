@@ -13,7 +13,8 @@
     #progressBar { width: 100%; background-color: #f3f3f3; }
     #progressBar div { width: 0%; height: 30px; background-color: #4CAF50; text-align: center; line-height: 30px; color: white; }
     #trainingStatus { margin-top: 10px; font-weight: bold; }
-    #debugInfo { margin-top: 20px; font-family: monospace; white-space: pre-wrap; }
+    #debugInfo { margin-top: 20px; font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+
 
 </style>
 {% endblock %}
@@ -57,6 +58,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
 <script>
    // Fetch current model type when page loads
+
+
+function logDebugInfo(message) {
+    console.log(message);
+    const debugInfoElement = document.getElementById('debugInfo');
+    debugInfoElement.textContent += message + '\n';
+    debugInfoElement.scrollTop = debugInfoElement.scrollHeight;
+}
 axios.get('/get_current_model')
     .then(function (response) {
         document.getElementById('currentModel').textContent = response.data.model_type || 'None';
@@ -80,37 +89,36 @@ document.getElementById('trainingForm').addEventListener('submit', function(e) {
     document.getElementById('progressBar').style.display = 'block';
     document.querySelector('#progressBar div').style.width = '0%';
     document.querySelector('#progressBar div').textContent = '0%';
-    
+    logDebugInfo(`Initiating training for symbol: ${symbol}, model type: ${modelType}`);
+
     axios.post('/train_model', {
         symbol: symbol,
         model_type: modelType
     })
     .then(function (response) {
         const taskId = response.data.task_id;
+        logDebugInfo(`Training initiated. Task ID: ${taskId}`);
         pollTrainingStatus(taskId);
     })
     .catch(function (error) {
         document.getElementById('trainingStatus').textContent = `Error: ${error.response.data.error}`;
+        logDebugInfo(`Error initiating training: ${errorMessage}`);
+
     });
 });
+
 
 function pollTrainingStatus(taskId) {
     let progress = 0;
     const statusElement = document.getElementById('trainingStatus');
     const progressBarElement = document.querySelector('#progressBar div');
     const resultTextElement = document.getElementById('resultText');
-    const debugInfoElement = document.getElementById('debugInfo');
     
     function updateProgress() {
         progress += 5;
         if (progress > 90) progress = 90;
         progressBarElement.style.width = progress + '%';
         progressBarElement.textContent = progress + '%';
-    }
-
-    function logDebugInfo(message) {
-        console.log(message);
-        debugInfoElement.textContent += message + '\n';
     }
 
     function checkStatus() {
@@ -149,8 +157,9 @@ function pollTrainingStatus(taskId) {
                 }
             })
             .catch(function (error) {
-                logDebugInfo(`Error checking training status: ${error}`);
-                statusElement.textContent = `Error checking training status: ${error.response ? error.response.data.message : error.message}`;
+                const errorMessage = error.response ? error.response.data.message : error.message;
+                logDebugInfo(`Error checking training status: ${errorMessage}`);
+                statusElement.textContent = `Error checking training status: ${errorMessage}`;
                 statusElement.className = 'error';
                 resultTextElement.textContent = 'An error occurred while checking the training status. Please try again later.';
             });
@@ -203,11 +212,12 @@ function populateStockDropdown() {
     })
     .catch(function (error) {
         console.error('Error fetching watched stocks:', error);
+        logDebugInfo(`Error fetching watched stocks: ${error.message}`);
     });
 }
 document.addEventListener('DOMContentLoaded', function() {
     populateStockDropdown();
-    // ... other initialization code ...
+    logDebugInfo('Page loaded. Initializing...');
 });
 </script>
 {% endblock %}

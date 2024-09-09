@@ -269,45 +269,69 @@ def stock_detail(symbol):
 
     # ML prediction
     current_model_type = redis.get('current_model_type')
+    print(f"Current model type from Redis: {current_model_type}")
+
     if current_model_type:
         current_model_type = current_model_type.decode('utf-8')
+        print(f"Decoded current model type: {current_model_type}")
         try:
+            print(f"Sending prediction request to ML service: {ML_SERVICE_URL}/predict")
             response = requests.post(f"{ML_SERVICE_URL}/predict", 
-                                     json={"data": historical_data.to_dict(orient='index'),
-                                           "model_type": current_model_type})
+                                    json={"data": historical_data.to_dict(orient='index'),
+                                        "model_type": current_model_type})
+            print(f"Prediction response status code: {response.status_code}")
+            print(f"Prediction response content: {response.text[:1000]}...")  # Print first 1000 chars of response
+            
             if response.status_code == 200:
                 prediction_data = response.json()
                 prediction = prediction_data['prediction']
                 confidence = prediction_data.get('confidence_interval')
                 forecast = prediction_data.get('forecast')
+                print(f"Prediction: {prediction}, Confidence: {confidence}, Forecast: {forecast}")
             else:
+                print(f"Error in prediction response: {response.text}")
                 prediction = None
                 confidence = None
                 forecast = None
-        except requests.RequestException:
+        except requests.RequestException as e:
+            print(f"Request exception during prediction: {str(e)}")
             prediction = None
             confidence = None
             forecast = None
     else:
+        print("No current model type found in Redis")
         prediction = None
         confidence = None
         forecast = None
 
     # Fetch model metrics and feature importance
     model_metrics = redis.get('model_metrics')
+    print(f"Model metrics from Redis: {model_metrics}")
     if model_metrics:
         model_metrics = json.loads(model_metrics.decode('utf-8'))
+        print(f"Decoded model metrics: {model_metrics}")
     else:
+        print("No model metrics found in Redis")
         model_metrics = None
 
     feature_importance = redis.get('feature_importance')
+    print(f"Feature importance from Redis: {feature_importance}")
     if feature_importance:
         feature_importance = json.loads(feature_importance.decode('utf-8'))
         # Sort feature importance in descending order
         feature_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+        print(f"Decoded and sorted feature importance: {feature_importance[:5]}...")  # Print first 5 items
     else:
+        print("No feature importance found in Redis")
         feature_importance = None
 
+    print(f"Final values being passed to template:")
+    print(f"prediction: {prediction}")
+    print(f"confidence: {confidence}")
+    print(f"forecast: {forecast}")
+    print(f"current_model_type: {current_model_type}")
+    print(f"model_metrics: {model_metrics}")
+    print(f"feature_importance: {feature_importance[:5] if feature_importance else None}")
     return render_template('stock_detail.html', 
                            symbol=symbol, 
                            data=data,
