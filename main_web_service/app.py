@@ -487,19 +487,22 @@ def serialize_for_json(obj):
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
-def train_model_task(task_id, ticker, model_type):
+def train_model_task(task_id, symbol, model_type):
     try:
-        result = train_ml_model(ticker, model_type)
-        serialized_result = json.loads(json.dumps(result, default=json_serialize))
-        training_tasks[task_id] = {
-            "status": "completed",
-            "result": serialized_result
-        }
+        response = requests.post(f"{ML_SERVICE_URL}/train", 
+                                 json={"symbol": symbol, "model_type": model_type})
+        if response.status_code == 200:
+            result = response.json()
+            training_tasks[task_id] = {
+                "status": "completed",
+                "result": result
+            }
+        else:
+            training_tasks[task_id] = {
+                "status": "failed",
+                "error": f"ML service returned status code {response.status_code}"
+            }
     except Exception as e:
-        print(f"Error in train_model_task: {str(e)}")
-        print(f"Error type: {type(e)}")
-        if hasattr(e, 'response'):
-            print(f"Response content: {e.response.content}")
         training_tasks[task_id] = {
             "status": "failed",
             "error": str(e)
@@ -515,14 +518,15 @@ def json_serialize(obj):
 
 @app.route('/train_model', methods=['POST'])
 def train_model_endpoint():
-    ticker = request.json.get('ticker')
-    model_type = request.json.get('model_type', 'rf')  # Default to 'rf' if not specified
-    
+    symbol = request.json.get('symbol')
+    model_type = request.json.get('model_type', 'rf')
+    if not symbol:
+        return jsonify({"error": "Symbol is required"}), 400
     task_id = str(uuid.uuid4())  # Generate a unique task ID
     training_tasks[task_id] = {"status": "in_progress"}
     
     # Start the training in a background thread
-    thread = threading.Thread(target=train_model_task, args=(task_id, ticker, model_type))
+    thread = threading.Thread(target=train_model_task, args=(task_id, symbol, model_type))
     thread.start()
     
     return jsonify({"task_id": task_id, "message": "Training started"}), 202

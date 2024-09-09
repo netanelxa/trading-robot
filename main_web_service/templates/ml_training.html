@@ -23,8 +23,8 @@
 <p>Current Model: <span id="currentModel">Loading...</span></p>
 
 <form id="trainingForm">
-    <label for="ticker">Stock Ticker (optional):</label>
-    <input type="text" id="ticker" name="ticker">
+    <label for="symbol">Stock Symbol:</label>
+    <input type="text" id="symbol" name="symbol" required>
     
     <label for="modelType">ML Model Type:</label>
     <select id="modelType" name="modelType">
@@ -37,6 +37,10 @@
     
     <button type="submit">Train Model</button>
 </form>
+
+
+<a href="/download_prepared_data" download>Download Prepared Data</a>
+<a href="/view_prepared_data" target="_blank">View Prepared Data</a>
 <div id="trainingStatus"></div>
 
 <div id="progressBar" style="display: none;">
@@ -51,125 +55,134 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
 <script>
-    // Fetch current model type when page loads
-    axios.get('/get_current_model')
-        .then(function (response) {
-            document.getElementById('currentModel').textContent = response.data.model_type || 'None';
-        })
-        .catch(function (error) {
-            console.error('Error fetching current model:', error);
-        });
-
-        
-        document.getElementById('trainingForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const ticker = document.getElementById('ticker').value;
-        const modelType = document.getElementById('modelType').value;
-        
-        document.getElementById('trainingStatus').textContent = 'Initiating training...';
-        document.getElementById('progressBar').style.display = 'block';
-        document.querySelector('#progressBar div').style.width = '0%';
-        document.querySelector('#progressBar div').textContent = '0%';
-        
-        axios.post('/train_model', {
-            ticker: ticker || null,
-            model_type: modelType
-        })
-        .then(function (response) {
-            const taskId = response.data.task_id;
-            pollTrainingStatus(taskId);
-        })
-        .catch(function (error) {
-            document.getElementById('trainingStatus').textContent = `Error: ${error.response.data.error}`;
-        });
+   // Fetch current model type when page loads
+axios.get('/get_current_model')
+    .then(function (response) {
+        document.getElementById('currentModel').textContent = response.data.model_type || 'None';
+    })
+    .catch(function (error) {
+        console.error('Error fetching current model:', error);
     });
 
-    function pollTrainingStatus(taskId) {
-        let progress = 0;
-        const statusElement = document.getElementById('trainingStatus');
-        const progressBarElement = document.querySelector('#progressBar div');
-        const resultTextElement = document.getElementById('resultText');
-        const debugInfoElement = document.getElementById('debugInfo');
-        
-        function updateProgress() {
-            progress += 5;
-            if (progress > 90) progress = 90;
-            progressBarElement.style.width = progress + '%';
-            progressBarElement.textContent = progress + '%';
-        }
+document.getElementById('trainingForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('symbol').value;
+    const modelType = document.getElementById('modelType').value;
+    
+    if (!symbol) {
+        alert('Please enter a stock symbol');
+        return;
+    }
+    
+    document.getElementById('trainingStatus').textContent = 'Initiating training...';
+    document.getElementById('progressBar').style.display = 'block';
+    document.querySelector('#progressBar div').style.width = '0%';
+    document.querySelector('#progressBar div').textContent = '0%';
+    
+    axios.post('/train_model', {
+        symbol: symbol,
+        model_type: modelType
+    })
+    .then(function (response) {
+        const taskId = response.data.task_id;
+        pollTrainingStatus(taskId);
+    })
+    .catch(function (error) {
+        document.getElementById('trainingStatus').textContent = `Error: ${error.response.data.error}`;
+    });
+});
 
-        function logDebugInfo(message) {
-            console.log(message);
-            debugInfoElement.textContent += message + '\n';
-        }
+function pollTrainingStatus(taskId) {
+    let progress = 0;
+    const statusElement = document.getElementById('trainingStatus');
+    const progressBarElement = document.querySelector('#progressBar div');
+    const resultTextElement = document.getElementById('resultText');
+    const debugInfoElement = document.getElementById('debugInfo');
+    
+    function updateProgress() {
+        progress += 5;
+        if (progress > 90) progress = 90;
+        progressBarElement.style.width = progress + '%';
+        progressBarElement.textContent = progress + '%';
+    }
 
-        function checkStatus() {
-            logDebugInfo(`Checking status for task ${taskId}...`);
-            axios.get(`/training_status/${taskId}`)
-                .then(function (response) {
-                    logDebugInfo(`Received response: ${JSON.stringify(response.data, null, 2)}`);
-                    updateProgress();
-                    if (response.data && response.data.status) {
-                        if (response.data.status === 'completed') {
-                            statusElement.textContent = 'Training completed!';
-                            progressBarElement.style.width = '100%';
-                            progressBarElement.textContent = '100%';
-                            if (response.data.result && !response.data.result.error) {
-                                displayResults(response.data.result);
-                            } else {
-                                const errorMessage = response.data.result ? response.data.result.error : 'Unknown error occurred';
-                                logDebugInfo(`Error in result: ${errorMessage}`);
-                                statusElement.textContent = `Training failed: ${errorMessage}`;
-                                statusElement.className = 'error';
-                            }
-                        } else if (response.data.status === 'failed') {
-                            statusElement.textContent = `Training failed: ${response.data.error || 'Unknown error'}`;
-                            statusElement.className = 'error';
-                        } else if (response.data.status === 'in_progress') {
-                            statusElement.textContent = 'Training in progress...';
-                            setTimeout(checkStatus, 2000);
+    function logDebugInfo(message) {
+        console.log(message);
+        debugInfoElement.textContent += message + '\n';
+    }
+
+    function checkStatus() {
+        logDebugInfo(`Checking status for task ${taskId}...`);
+        axios.get(`/training_status/${taskId}`)
+            .then(function (response) {
+                logDebugInfo(`Received response: ${JSON.stringify(response.data, null, 2)}`);
+                updateProgress();
+                if (response.data && response.data.status) {
+                    if (response.data.status === 'completed') {
+                        statusElement.textContent = 'Training completed!';
+                        progressBarElement.style.width = '100%';
+                        progressBarElement.textContent = '100%';
+                        if (response.data.result && !response.data.result.error) {
+                            displayResults(response.data.result);
                         } else {
-                            statusElement.textContent = `Unexpected status: ${response.data.status}`;
+                            const errorMessage = response.data.result ? response.data.result.error : 'Unknown error occurred';
+                            logDebugInfo(`Error in result: ${errorMessage}`);
+                            statusElement.textContent = `Training failed: ${errorMessage}`;
                             statusElement.className = 'error';
                         }
+                    } else if (response.data.status === 'failed') {
+                        statusElement.textContent = `Training failed: ${response.data.error || 'Unknown error'}`;
+                        statusElement.className = 'error';
+                    } else if (response.data.status === 'in_progress') {
+                        statusElement.textContent = 'Training in progress...';
+                        setTimeout(checkStatus, 2000);
                     } else {
-                        logDebugInfo('Error: Response data is not in the expected format.');
-                        statusElement.textContent = 'Error: Unexpected response format';
+                        statusElement.textContent = `Unexpected status: ${response.data.status}`;
                         statusElement.className = 'error';
                     }
-                })
-                .catch(function (error) {
-                    logDebugInfo(`Error checking training status: ${error}`);
-                    statusElement.textContent = `Error checking training status: ${error.response ? error.response.data.message : error.message}`;
+                } else {
+                    logDebugInfo('Error: Response data is not in the expected format.');
+                    statusElement.textContent = 'Error: Unexpected response format';
                     statusElement.className = 'error';
-                    resultTextElement.textContent = 'An error occurred while checking the training status. Please try again later.';
-                });
-        }
-
-        checkStatus();
+                }
+            })
+            .catch(function (error) {
+                logDebugInfo(`Error checking training status: ${error}`);
+                statusElement.textContent = `Error checking training status: ${error.response ? error.response.data.message : error.message}`;
+                statusElement.className = 'error';
+                resultTextElement.textContent = 'An error occurred while checking the training status. Please try again later.';
+            });
     }
 
-    function displayResults(result) {
-        logDebugInfo(`Displaying results: ${JSON.stringify(result, null, 2)}`);
-        let resultText = `Training completed: ${result.message || 'No message provided'}\n\n`;
-        resultText += `Model Type: ${result.model_type || 'Unknown'}\n`;
-        resultText += `Metrics:\n`;
-        if (result.metrics) {
-            for (let [key, value] of Object.entries(result.metrics)) {
-                resultText += `  ${key}: ${typeof value === 'number' ? value.toFixed(4) : value}\n`;
-            }
-        } else {
-            resultText += '  No metrics available\n';
+    checkStatus();
+}
+
+function displayResults(result) {
+    logDebugInfo(`Displaying results: ${JSON.stringify(result, null, 2)}`);
+    let resultText = `Training completed: ${result.message || 'No message provided'}\n\n`;
+    resultText += `Model Type: ${result.model_type || 'Unknown'}\n`;
+    resultText += `Metrics:\n`;
+    if (result.metrics) {
+        for (let [key, value] of Object.entries(result.metrics)) {
+            resultText += `  ${key}: ${typeof value === 'number' ? value.toFixed(4) : value}\n`;
         }
-        if (result.feature_importance) {
-            resultText += `\nFeature Importance:\n`;
-            for (let [feature, importance] of Object.entries(result.feature_importance)) {
-                resultText += `  ${feature}: ${typeof importance === 'number' ? (importance * 100).toFixed(2) : importance}%\n`;
-            }
-        }
-        document.getElementById('resultText').textContent = resultText;
-        document.getElementById('currentModel').textContent = result.model_type || 'Unknown';
+    } else {
+        resultText += '  No metrics available\n';
     }
+    if (result.feature_importance) {
+        resultText += `\nFeature Importance:\n`;
+        for (let [feature, importance] of Object.entries(result.feature_importance)) {
+            resultText += `  ${feature}: ${typeof importance === 'number' ? (importance * 100).toFixed(2) : importance}%\n`;
+        }
+    }
+    document.getElementById('resultText').textContent = resultText;
+    document.getElementById('currentModel').textContent = result.model_type || 'Unknown';
+
+    // Add links for downloading and viewing prepared data
+    const resultsElement = document.getElementById('results');
+    resultsElement.innerHTML += '<br><a href="/download_prepared_data" download>Download Prepared Data</a>';
+    resultsElement.innerHTML += '<br><a href="/view_prepared_data" target="_blank">View Prepared Data</a>';
+}
 </script>
 {% endblock %}
