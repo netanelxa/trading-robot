@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python packages
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY ml_service.py .

@@ -426,7 +426,6 @@ def market_movers():
             # Return an error page
             return render_template('error.html', message="Unable to fetch market data. Please try again later."), 500
 
-
 def train_ml_model(ticker=None, model_type='rf'):
     if ticker:
         stock_data = {ticker: get_stock_data(ticker).to_dict(orient='index')}
@@ -442,15 +441,9 @@ def train_ml_model(ticker=None, model_type='rf'):
         stock_data[symbol] = {k.isoformat(): {kk: json_serialize(vv) for kk, vv in v.items()} for k, v in data.items()}
     
     try:
-        print(f"Sending request to ML service: {ML_SERVICE_URL}/train")
-        print(f"Request data: {json.dumps({'data': stock_data, 'model_type': model_type})[:1000]}...")  # Print first 1000 chars
-        
         response = requests.post(f"{ML_SERVICE_URL}/train", 
                                  json={"data": stock_data, "model_type": model_type},
                                  timeout=30)  # Add a timeout
-        
-        print(f"Response status code: {response.status_code}")
-        print(f"Response content: {response.text[:1000]}...")  # Print first 1000 chars of response
         
         if response.status_code == 200:
             result = response.json()
@@ -468,14 +461,7 @@ def train_ml_model(ticker=None, model_type='rf'):
         else:
             return {"error": f"Error training model: {response.text}"}
     except requests.RequestException as e:
-        print(f"Request Exception: {str(e)}")
         return {"error": f"Error connecting to ML service: {str(e)}"}
-    except json.JSONDecodeError as e:
-        print(f"JSON Decode Error: {str(e)}")
-        return {"error": f"Error decoding JSON response from ML service: {str(e)}"}
-    except Exception as e:
-        print(f"Unexpected Error: {str(e)}")
-        return {"error": f"Unexpected error: {str(e)}"}
 
 
 # Global dictionary to store training status

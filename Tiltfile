@@ -17,11 +17,18 @@ docker_build(
 )
 
 # Use the pre-built image from Docker Hub for ML service
-custom_build(
-    'netanelxa/ml-service',
-    'docker pull netanelxa/ml-service:latest && echo pulled',
-    deps=[],
-    tag='latest'
+# custom_build(
+#     'netanelxa/ml-service',
+#     'docker pull netanelxa/ml-service:latest && echo pulled',
+#     deps=[],
+#     tag='latest'
+# )
+
+# Build the Docker image for ML service
+docker_build(
+    "netanelxa/ml-service:latest",
+    "./ml_service",  # Adjust this path to where your ML service code is located
+    network='host'
 )
 
 # Create and manage the Alpaca secrets

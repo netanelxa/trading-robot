@@ -20,7 +20,8 @@ spec:
         - containerPort: 5002
       env:
         - name: REDIS_HOST
-          value: "redis"
+          value: "redis"  # This should resolve to an IP or hostname
+
         - name: REDIS_PORT
           value: "6379"
 ---

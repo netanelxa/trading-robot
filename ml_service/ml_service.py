@@ -19,14 +19,28 @@ from tensorflow.keras.optimizers import Adam
 import logging
 import traceback
 from redis import Redis
-
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
 
 
-redis_client = Redis(host=os.environ.get('REDIS_HOST', 'localhost'),
-                  port=int(os.environ.get('REDIS_PORT', 6379)))
+# Fetch Redis host and port
+redis_host = os.environ.get('REDIS_HOST', 'localhost')
+redis_port = os.environ.get('REDIS_PORT', '6379')
+
+# Check if redis_port is a connection string (contains 'tcp://')
+if '://' in redis_port:
+    # Parse the connection string
+    parsed_url = urlparse(redis_port)
+    redis_host = parsed_url.hostname
+    redis_port = parsed_url.port
+else:
+    # Convert the port to an integer if it's just a number
+    redis_port = int(redis_port)
+
+# Initialize Redis client
+redis_client = Redis(host=redis_host, port=redis_port)
 
 model = None
 scaler = None
@@ -36,16 +50,18 @@ prepared_data = None
 def get_stock_data_from_redis(symbol):
     data = redis_client.get(symbol)
     if data:
-        return pd.DataFrame.from_dict(json.loads(data), orient='index')
+        json_data = json.loads(data)
+        df = pd.DataFrame.from_dict(json_data, orient='index')
+        df.index = pd.to_datetime(df.index)
+        return df
     return pd.DataFrame()
 
 
-def prepare_data(symbol, sequence_length=10):
-    print(f"Preparing data for {symbol}")
-    df = get_stock_data_from_redis(symbol)
+def prepare_data(df, sequence_length=10):
+    print(f"Preparing data")
     
     if df.empty:
-        raise ValueError(f"No data available for {symbol}")
+        raise ValueError(f"No data available")
 
     print(f"Initial dataframe shape: {df.shape}")
     print(f"Initial dataframe columns: {df.columns}")
