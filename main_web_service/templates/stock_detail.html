@@ -164,7 +164,7 @@
         <tr>
             <td>{{ item.date }}</td>
             <td>${{ "{:.2f}".format(item.Close) if item.Close is defined else "N/A" }}</td>
-            <td>{{ "{:,d}".format(item.Volume|int) if item.Volume is defined else "N/A" }}</td>
+            <td>{{ "{:,d}".format(item.Volume) if item.Volume is defined else "N/A" }}</td>
         </tr>
     {% endfor %}
     </tbody>

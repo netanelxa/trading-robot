@@ -155,6 +155,11 @@ def get_stock_data(symbol):
     
     return df
 
+def fetch_stock_data_background(symbol):
+    print(f"Fetching data for {symbol} in the background")
+    get_stock_data(symbol)
+    print(f"Finished fetching data for {symbol}")
+
 @app.route('/add-stock', methods=['GET', 'POST'])
 def add_stock():
     tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
@@ -163,10 +168,10 @@ def add_stock():
         symbol = request.form['symbol'].upper()
         if redis.sadd('stocks', symbol):
             message = f"Stock {symbol} added successfully!"
+            threading.Thread(target=fetch_stock_data_background, args=(symbol,)).start()
         else:
             message = f"Stock {symbol} is already being tracked."
     return render_template('add_stock.html', message=message)
-
 
 @app.route('/stocks')
 def list_stocks():
@@ -189,8 +194,7 @@ def process_data(df):
     return [{
         'date': date.strftime('%Y-%m-%d'),
         'Close': row['Close'],
-        'Volume': row['Volume'],
-        'SPX_Close': row['SPX_Close']
+        'Volume': int(row['Volume']),
     } for date, row in df.iterrows()]
 
 @app.route('/stock/<symbol>')
@@ -214,7 +218,7 @@ def stock_detail(symbol):
     low_52week = historical_data['Low'].min()
     
     # Calculate moving averages (already in the data)
-    last_data = historical_data.iloc[-1]
+    last_data = historical_data.iloc[0]  # Most recent data point
     ma_50 = last_data['SMA50']
     ma_200 = last_data['SMA200']
     
@@ -235,7 +239,7 @@ def stock_detail(symbol):
     news_data = get_cached_data(f"{symbol}_news", fetch_news)
 
     # Get trade recommendation
-    recommendation = get_trade_recommendation(symbol, historical_data)
+    recommendation = get_trade_recommendation(symbol, historical_data.sort_index(ascending=True))
 
     # Check for candlestick patterns on the last day
     pattern_columns = ['CDLDOJI', 'CDLHAMMER', 'CDLENGULFING', 'CDLSHOOTINGSTAR',
