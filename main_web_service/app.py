@@ -23,7 +23,7 @@ app.logger.setLevel(logging.INFO)
 
 app.jinja_env.filters['tojson'] = json.dumps
 serviceName = "web-ui"
-# tracer = trace.get_tracer(serviceName + ".tracer")
+tracer = trace.get_tracer(serviceName + ".tracer")
 
 ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://ml-service:5002')
 
@@ -49,7 +49,7 @@ api = REST(key_id=os.environ.get('APCA_API_KEY_ID'),  # Corrected env var name
 
 @app.route('/')
 def index():
-    # tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     return render_template('index.html')
 
 
@@ -157,7 +157,7 @@ def get_stock_data(symbol):
 
 @app.route('/add-stock', methods=['GET', 'POST'])
 def add_stock():
-    # tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
+    tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
     message = None
     if request.method == 'POST':
         symbol = request.form['symbol'].upper()
@@ -198,11 +198,12 @@ def stock_detail(symbol):
     historical_data = get_stock_data(symbol)
     if historical_data.empty:
         return render_template('error.html', error_message="No data available for this stock.")
+    historical_data = historical_data.sort_index(ascending=False)
 
     data = {
-        '1M': process_data(historical_data.tail(30)),
-        '3M': process_data(historical_data.tail(90)),
-        '1Y': process_data(historical_data.tail(365))
+        '1M': process_data(historical_data.head(30)),
+        '3M': process_data(historical_data.head(90)),
+        '1Y': process_data(historical_data)
     }
 
     # Get latest available price
@@ -334,7 +335,7 @@ def stock_detail(symbol):
                            symbol=symbol, 
                            data=data,
                            current_price=current_price,
-                           end_date=historical_data.index[-1].date(),
+                           end_date=historical_data.index[0].date(),
                            high_52week=high_52week,
                            low_52week=low_52week,
                            ma_50=ma_50,
