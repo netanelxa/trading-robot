@@ -195,6 +195,7 @@ def process_data(df):
         'date': date.strftime('%Y-%m-%d'),
         'Close': row['Close'],
         'Volume': int(row['Volume']),
+        'SPX_Close': row['SPX_Close']
     } for date, row in df.iterrows()]
 
 @app.route('/stock/<symbol>')
@@ -271,70 +272,10 @@ def stock_detail(symbol):
                 'wick_bottom_height': wick_bottom_height,
                 'body_position': (high_price - max(open_price, close_price)) / price_range * 50
             })
-  # ML prediction
-    symbol_model_type = redis.get(f"{symbol}_model_type")
-    if symbol_model_type:
-        current_model_type = symbol_model_type.decode('utf-8')
-        try:
-            # Convert historical_data to a serializable format
-            serializable_data = {
-                date.isoformat(): {
-                    key: json_serialize(value) 
-                    for key, value in row.items()
-                }
-                for date, row in historical_data.iterrows()
-            }
-            
-            response = requests.post(
-                f"{ML_SERVICE_URL}/predict", 
-                json={
-                    "symbol": symbol,
-                    "data": serializable_data
-                },
-                timeout=10  # Add a timeout to prevent hanging
-            )
-            print(f"Prediction response status code: {response.status_code}")
-            print(f"Prediction response content: {response.text[:1000]}...")  # Print first 1000 chars of response
-            
-            if response.status_code == 200:
-                prediction_data = response.json()
-                prediction = prediction_data['prediction']
-                confidence = prediction_data.get('confidence_interval')
-                forecast = prediction_data.get('forecast')
-                print(f"Prediction: {prediction}, Confidence: {confidence}, Forecast: {forecast}")
-            else:
-                print(f"Error in prediction response: {response.text}")
-                prediction = None
-                confidence = None
-                forecast = None
-        except requests.RequestException as e:
-            print(f"Request exception during prediction: {str(e)}")
-            prediction = None
-            confidence = None
-            forecast = None
-    else:
-        print(f"No model type found for symbol {symbol}")
-        current_model_type = None
-        prediction = None
-        confidence = None
-        forecast = None
-        # Fetch model metrics and feature importance
-    model_metrics_data = redis.get(f"{symbol}_model_metrics")
-    if model_metrics_data:
-        model_metrics = json.loads(model_metrics_data.decode('utf-8'))
-        print(f"Model metrics: {model_metrics}")
-    else:
-        print(f"No model metrics found for symbol {symbol}")
-        model_metrics = None
-    feature_importance_data = redis.get(f"{symbol}_feature_importance")
-    if feature_importance_data:
-        feature_importance = json.loads(feature_importance_data.decode('utf-8'))
-        # Sort feature importance in descending order
-        feature_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-        print(f"Feature importance (top 5): {feature_importance[:5]}")
-    else:
-        print(f"No feature importance found for symbol {symbol}")
-        feature_importance = None
+
+    (current_model_type, prediction, confidence, forecast, 
+     forecast_confidence, model_metrics, feature_importance) = get_ml_prediction(symbol, historical_data)
+
     return render_template('stock_detail.html', 
                            symbol=symbol, 
                            data=data,
@@ -348,13 +289,80 @@ def stock_detail(symbol):
                            news=news_data,
                            detected_patterns=detected_patterns,
                            recommendation=recommendation,
-                           prediction=prediction,
-                           confidence=confidence,
-                           forecast=forecast,
-                           current_model_type=current_model_type,
-                           model_metrics=model_metrics,
-                           feature_importance=feature_importance)
+                            prediction=prediction,
+                            confidence=confidence,
+                            forecast=forecast,
+                            forecast_confidence=forecast_confidence,
+                            current_model_type=current_model_type,
+                            model_metrics=model_metrics,
+                            feature_importance=feature_importance,
+                            zip=zip)
 
+
+def get_ml_prediction(symbol, historical_data):
+    symbol_model_type = redis.get(f"{symbol}_model_type")
+    if not symbol_model_type:
+        app.logger.warning(f"No model type found for symbol {symbol}")
+        return None, None, None, None, None, None, None
+
+    current_model_type = symbol_model_type.decode('utf-8')
+    
+    try:
+        # Convert historical_data to a serializable format
+        serializable_data = {
+            date.isoformat(): {
+                key: json_serialize(value) 
+                for key, value in row.items()
+            }
+            for date, row in historical_data.iterrows()
+        }
+        
+        response = requests.post(
+            f"{ML_SERVICE_URL}/predict", 
+            json={"symbol": symbol, "data": serializable_data},
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        prediction_data = response.json()
+        app.logger.info(f"Prediction data received for {symbol}: {prediction_data}")
+        
+        return (
+            current_model_type,
+            prediction_data.get('prediction'),
+            prediction_data.get('confidence'),
+            prediction_data.get('forecast', []),
+            prediction_data.get('forecast_confidence', []),
+            get_model_metrics(symbol),
+            get_feature_importance(symbol)
+        )
+    except requests.RequestException as e:
+        app.logger.error(f"Request exception during prediction for {symbol}: {str(e)}")
+    except json.JSONDecodeError:
+        app.logger.error(f"Failed to parse prediction response for {symbol}: {response.text}")
+    except Exception as e:
+        app.logger.error(f"Unexpected error during prediction for {symbol}: {str(e)}")
+    
+    return current_model_type, None, None, [], [], None, None
+
+def get_model_metrics(symbol):
+    model_metrics_data = redis.get(f"{symbol}_model_metrics")
+    if model_metrics_data:
+        try:
+            return json.loads(model_metrics_data.decode('utf-8'))
+        except json.JSONDecodeError:
+            app.logger.error(f"Failed to parse model metrics for {symbol}")
+    return None
+
+def get_feature_importance(symbol):
+    feature_importance_data = redis.get(f"{symbol}_feature_importance")
+    if feature_importance_data:
+        try:
+            feature_importance = json.loads(feature_importance_data.decode('utf-8'))
+            return sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+        except json.JSONDecodeError:
+            app.logger.error(f"Failed to parse feature importance for {symbol}")
+    return None
 
 @app.route('/get_current_model')
 def get_current_model():

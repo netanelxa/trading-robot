@@ -73,7 +73,8 @@ def prepare_data(df, symbol,sequence_length=10):
         'EMA20', 'HT_TRENDLINE', 'STOCH_K', 'STOCH_D',
         'WILLR', 'AD', 'OBV', 'ATR', 'NATR'
     ]
-
+    app.logger.info(f"Actual features being used: {features}")
+    app.logger.info(f"Number of features: {len(features)}")
     # Save the feature list
     redis_client.set(f"{symbol}_features", json.dumps(features))
 
@@ -158,10 +159,18 @@ def create_model(model_type, input_shape=None):
         raise ValueError("Invalid model type")
 
 def train_model(X_train, y_train, model_type, symbol, features):
+    app.logger.info(f"Training {model_type} model for {symbol}")
+    app.logger.info(f"X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+    app.logger.info(f"X_train dtype: {X_train.dtype}, y_train dtype: {y_train.dtype}")
+    
     redis_client.set(f"{symbol}_features", json.dumps(features))
     
     model = create_model(model_type, input_shape=(X_train.shape[1], X_train.shape[2]))
-    if model_type == 'lstm':
+    if model_type == 'xgb':
+        X_train_reshaped = X_train.reshape(X_train.shape[0], -1)
+        app.logger.info(f"Reshaped X_train for XGB: {X_train_reshaped.shape}")
+        model.fit(X_train_reshaped, y_train)
+    elif model_type == 'lstm':
         model.fit(X_train, y_train, epochs=50, batch_size=32, verbose=0)
     else:
         model.fit(X_train.reshape(X_train.shape[0], -1), y_train)
@@ -185,9 +194,30 @@ def predict_next_close(model, scaler, latest_data, model_type, symbol):
     
     latest_scaled = scaler.transform(latest_data)
     if model_type == 'lstm':
-        return model.predict(np.array([latest_scaled]))[0][0]
+        latest_scaled = latest_scaled.reshape(1, latest_scaled.shape[0], latest_scaled.shape[1])
+        prediction = model.predict(latest_scaled)[0][0]
+        # For LSTM, we can use the model's loss as a proxy for confidence
+        confidence = 1 / (1 + model.evaluate(latest_scaled, np.array([prediction]), verbose=0)[0])
+    elif model_type == 'rf':
+        predictions = []
+        for estimator in model.estimators_:
+            pred = estimator.predict(latest_scaled.reshape(1, -1))[0]
+            predictions.append(pred)
+        prediction = np.mean(predictions)
+        confidence = 1 - (np.std(predictions) / prediction)  # Normalize by prediction value
+    elif model_type == 'xgb':
+        prediction = model.predict(latest_scaled.reshape(1, -1))[0]
+        # For XGBoost, we can use the built-in predict_proba method if it's a classification task
+        # For regression, we'll use a simplification based on the tree's leaf values
+        leaf_outputs = model.get_booster().predict(xgb.DMatrix(latest_scaled.reshape(1, -1)), pred_leaf=True)
+        confidence = 1 / (1 + np.std(leaf_outputs))
     else:
-        return model.predict(latest_scaled.reshape(1, -1))[0]
+        prediction = model.predict(latest_scaled.reshape(1, -1))[0]
+        # For other models, we'll use a simple placeholder confidence
+        confidence = 0.5  # You might want to adjust this or implement a more sophisticated method
+    return prediction, confidence
+
+
 
 
 @app.route('/train', methods=['POST'])
@@ -232,19 +262,21 @@ def train():
         else:
             y_pred = model.predict(X_test.reshape(X_test.shape[0], -1))
         
-        mse = mean_squared_error(y_test, y_pred)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(y_test, y_pred)
+        mse = float(mean_squared_error(y_test, y_pred))
+        rmse = float(np.sqrt(mse))
+        r2 = float(r2_score(y_test, y_pred))
         
         metrics = {
-            "mse": float(mse),
-            "rmse": float(rmse),
-            "r2": float(r2)
+            "mse": mse,
+            "rmse": rmse,
+            "r2": r2
         }
         
-        feature_importance = None
+        # Convert feature importance to regular Python types
         if model_type in ['rf', 'xgb']:
-            feature_importance = dict(zip(prepared_data.columns, model.feature_importances_))
+            feature_importance = {k: float(v) for k, v in zip(prepared_data.columns, model.feature_importances_)}
+        else:
+            feature_importance = None
         
         # Save results to Redis
         redis_client.set(f"{symbol}_model_type", model_type)
@@ -262,12 +294,18 @@ def train():
             "metrics": metrics,
             "feature_importance": feature_importance
         }), 200
+    except ValueError as ve:
+        app.logger.error(f"ValueError in train: {str(ve)}")
+        return jsonify({"error": str(ve)}), 400
+    except TypeError as te:
+        app.logger.error(f"TypeError in train: {str(te)}")
+        return jsonify({"error": str(te)}), 400
     except Exception as e:
-        print(f"Error during training: {str(e)}")
-        print(f"Full traceback: {traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        app.logger.error(f"Unexpected error in train: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": "An unexpected error occurred during training"}), 500
 
-
+@app.route('/predict', methods=['POST'])
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
@@ -290,65 +328,49 @@ def predict():
         model = pickle.loads(redis_client.get(f"{symbol}_model"))
         scaler = pickle.loads(redis_client.get(f"{symbol}_scaler"))
         
-        # Convert the data back to a DataFrame
         df = pd.DataFrame.from_dict(data, orient='index')
         df.index = pd.to_datetime(df.index)
         df = df.sort_index(ascending=True)
         
         app.logger.debug(f"Processed DataFrame shape: {df.shape}")
         
-        # Convert columns back to appropriate types
         for col in df.columns:
             try:
                 df[col] = pd.to_numeric(df[col])
             except ValueError:
-                # Column couldn't be converted to numeric, leave it as is
                 pass        
 
         features = json.loads(redis_client.get(f"{symbol}_features"))
-        app.logger.info(f"Number of features used in training: {len(features)}")
-        app.logger.info(f"Features used in training: {features}")
         
-        # Ensure all required features are present
         for feature in features:
             if feature not in df.columns:
-                df[feature] = 0  # or use a more sophisticated imputation method
+                df[feature] = 0
         
         df = df[features]
         latest_data = df.tail(10)
         app.logger.info(f"Number of features in prediction data: {latest_data.shape[1]}")
         app.logger.debug(f"Latest data shape: {latest_data.shape}")
         
-        prediction = predict_next_close(model, scaler, latest_data, model_type, symbol)
-        app.logger.info(f"Prediction successful: {prediction}")
-        
-        # Calculate confidence interval (for RandomForest)
-        if model_type == 'rf':
-            predictions = []
-            for estimator in model.estimators_:
-                if model_type == 'lstm':
-                    pred = estimator.predict(np.array([scaler.transform(latest_data)]))[0][0]
-                else:
-                    pred = estimator.predict(scaler.transform(latest_data).reshape(1, -1))[0]
-                predictions.append(pred)
-            confidence_interval = stats.t.interval(0.95, len(predictions)-1, loc=np.mean(predictions), scale=stats.sem(predictions))
-        else:
-            confidence_interval = None
+        prediction, confidence = predict_next_close(model, scaler, latest_data, model_type, symbol)
+        app.logger.info(f"Prediction successful: {prediction}, Confidence: {confidence}")
         
         # Generate a short-term forecast (next 5 days)
         forecast = []
+        forecast_confidence = []
         temp_data = latest_data.copy()
         for _ in range(5):
-            next_pred = predict_next_close(model, scaler, temp_data, model_type, symbol)
+            next_pred, next_conf = predict_next_close(model, scaler, temp_data, model_type, symbol)
             forecast.append(float(next_pred))
+            forecast_confidence.append(float(next_conf))
             new_row = temp_data.iloc[-1].copy()
             new_row['Close'] = next_pred
             temp_data = pd.concat([temp_data.iloc[1:], pd.DataFrame([new_row])], ignore_index=True)
         
         return jsonify({
             "prediction": float(prediction),
-            "confidence_interval": confidence_interval,
-            "forecast": forecast
+            "confidence": float(confidence),
+            "forecast": forecast,
+            "forecast_confidence": forecast_confidence
         }), 200
     except Exception as e:
         app.logger.error(f"Error in prediction: {str(e)}")
