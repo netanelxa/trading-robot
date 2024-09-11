@@ -199,8 +199,14 @@ def predict_next_close(model, scaler, latest_data, model_type, symbol):
     if model_type == 'lstm':
         latest_scaled = latest_scaled.reshape(1, latest_scaled.shape[0], latest_scaled.shape[1])
         prediction = model.predict(latest_scaled)[0][0]
-        # For LSTM, we can use the model's loss as a proxy for confidence
-        confidence = 1 / (1 + model.evaluate(latest_scaled, np.array([prediction]), verbose=0)[0])
+        
+        # Use model.evaluate with the same input as prediction, but be cautious about the expected output shape
+        loss = model.evaluate(latest_scaled, np.array([[prediction]]), verbose=0)
+        
+        # If loss is a list/array, take the first element; otherwise, use it directly
+        loss_value = loss[0] if isinstance(loss, (list, np.ndarray)) else loss
+        
+        confidence = 1 / (1 + loss_value)
     elif model_type == 'rf':
         predictions = []
         for estimator in model.estimators_:
@@ -397,7 +403,10 @@ def download_prepared_data():
 
         # Create a CSV file in memory
         output = io.StringIO()
+        prepared_data = prepared_data.sort_index(ascending=False)  # Sort by date descending
+        prepared_data.index.name = 'Date'
         prepared_data.to_csv(output, index=True)
+
         output.seek(0)
         
         # Debug: Confirm the CSV is created and log the size of the output

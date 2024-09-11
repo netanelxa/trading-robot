@@ -26,7 +26,7 @@ serviceName = "web-ui"
 tracer = trace.get_tracer(serviceName + ".tracer")
 
 ML_SERVICE_URL = os.environ.get('ML_SERVICE_URL', 'http://ml-service:5002')
-
+DAYS_TO_FETCH=2000
 print(f"ML Service URL: {ML_SERVICE_URL}")  # Add this line for debugging
 
 
@@ -55,7 +55,7 @@ def index():
 
 def fetch_and_process_data(symbol, start_date=None, end_date=None):
     end_date = end_date or (datetime.now().date() - timedelta(days=1))  # Use yesterday's date
-    start_date = start_date or (end_date - timedelta(days=365))
+    start_date = start_date or (end_date - timedelta(days=DAYS_TO_FETCH))
 
     print(f"Fetching data for {symbol} from {start_date} to {end_date}")
     
@@ -142,7 +142,7 @@ def get_stock_data(symbol):
                 df = pd.concat([df, new_df])
                 update_cache(symbol, df.to_dict(orient='index'))
     else:
-        start_date = end_date - timedelta(days=365)
+        start_date = end_date - timedelta(days=DAYS_TO_FETCH)
         data = fetch_and_process_data(symbol, start_date, end_date)
         if data:
             df = pd.DataFrame.from_dict(data, orient='index')
