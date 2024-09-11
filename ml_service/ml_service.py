@@ -27,6 +27,8 @@ app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
 
 
+
+
 # Fetch Redis host and port
 redis_host = os.environ.get('REDIS_HOST', 'localhost')
 redis_port = os.environ.get('REDIS_PORT', '6379')
@@ -61,7 +63,8 @@ def get_stock_data_from_redis(symbol):
 
 def prepare_data(df, symbol,sequence_length=10):
     print(f"Preparing data")
-    
+    global prepared_data
+
     if df.empty:
         raise ValueError(f"No data available")
 
@@ -129,7 +132,7 @@ def prepare_data(df, symbol,sequence_length=10):
 
     print(f"Final X shape: {X_seq.shape}")
     print(f"Final y shape: {y_seq.shape}")
-
+    prepared_data = df
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(X_seq, y_seq, test_size=0.2, random_state=42)
 
@@ -287,7 +290,8 @@ def train():
         # Save model and scaler
         redis_client.set(f"{symbol}_model", pickle.dumps(model))
         redis_client.set(f"{symbol}_scaler", pickle.dumps(scaler))
-        
+        app.logger.info(f"Prepared data after training: {prepared_data.shape if prepared_data is not None else 'None'}")
+
         print("Training completed successfully")
         return jsonify({
             "message": f"Model {model_type} trained successfully for {symbol}",
@@ -305,7 +309,6 @@ def train():
         app.logger.error(traceback.format_exc())
         return jsonify({"error": "An unexpected error occurred during training"}), 500
 
-@app.route('/predict', methods=['POST'])
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
@@ -381,50 +384,70 @@ def predict():
 @app.route('/download_prepared_data', methods=['GET'])
 def download_prepared_data():
     global prepared_data
+
+    # Debug: Check if prepared_data is None
     if prepared_data is None:
+        app.logger.error("No prepared data available. Train a model first.")
         return jsonify({"error": "No prepared data available. Train a model first."}), 400
-    
-    # Create a CSV file in memory
-    output = io.StringIO()
-    prepared_data.to_csv(output, index=True)
-    output.seek(0)
-    
-    # Send the file
-    return send_file(
-        io.BytesIO(output.getvalue().encode()),
-        mimetype='text/csv',
-        as_attachment=True,
-        attachment_filename='prepared_data.csv'
-    )
+
+    try:
+        # Debug: Log shape and columns of prepared_data
+        app.logger.info(f"Prepared data shape: {prepared_data.shape}")
+        app.logger.info(f"Prepared data columns: {prepared_data.columns}")
+
+        # Create a CSV file in memory
+        output = io.StringIO()
+        prepared_data.to_csv(output, index=True)
+        output.seek(0)
+        
+        # Debug: Confirm the CSV is created and log the size of the output
+    # Debug: Confirm the CSV is created and log the size of the output
+        csv_size = len(output.getvalue())
+        app.logger.info(f"CSV size: {csv_size} bytes")
+
+        # Send the in-memory file
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            as_attachment=True,
+            download_name='prepared_data.csv',
+            mimetype='text/csv'
+        )
+    except Exception as e:
+        # Debug: Log the error message and traceback
+        app.logger.error(f"Error generating CSV: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Error generating CSV: {str(e)}"}), 500
+
 
 @app.route('/view_prepared_data', methods=['GET'])
 def view_prepared_data():
     global prepared_data
+
+    # Debug: Check if prepared_data is None
     if prepared_data is None:
-        return "No prepared data available. Train a model first."
-    
-    # Convert the DataFrame to HTML
-    html_table = prepared_data.to_html(classes='data')
-    
-    # Create a simple HTML page with the table
-    html_content = f"""
-    <html>
-        <head>
-            <title>Prepared Data</title>
-            <style>
-                table {{ border-collapse: collapse; width: 100%; }}
-                th, td {{ border: 1px solid black; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
-            </style>
-        </head>
-        <body>
-            <h1>Prepared Data</h1>
-            {html_table}
-        </body>
-    </html>
-    """
-    
-    return html_content
+        app.logger.error("No prepared data available. Train a model first.")
+        return jsonify({"error": "No prepared data available. Train a model first."}), 400
+
+    try:
+        # Debug: Log shape and columns of prepared_data
+        app.logger.info(f"Prepared data shape: {prepared_data.shape}")
+        app.logger.info(f"Prepared data columns: {prepared_data.columns}")
+
+        # Convert DataFrame to JSON
+        data_json = prepared_data.to_dict(orient="records")
+
+        # Debug: Log the size of the JSON response
+        json_size = len(data_json)
+        app.logger.info(f"Number of records in JSON response: {json_size}")
+
+        # Return the JSON response
+        return jsonify(data_json)
+    except Exception as e:
+        # Debug: Log the error message and traceback
+        app.logger.error(f"Error viewing prepared data: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": f"Error viewing prepared data: {str(e)}"}), 500
+
 
 @app.route('/')
 def index():
@@ -449,6 +472,9 @@ def index():
     </html>
     """
     return render_template_string(html)
+
+
+
 
 @app.route('/health')
 def health_check():

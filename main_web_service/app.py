@@ -578,6 +578,28 @@ def ml_training():
     return render_template('ml_training.html')
 
 
+@app.route('/download_prepared_data', methods=['GET'])
+def download_prepared_data():
+    try:
+        # Proxy the request to the ml_service on port 5002
+        response = requests.get(f"{ML_SERVICE_URL}/download_prepared_data")
+        
+        # Forward the response from the ml_service
+        return response.content, response.status_code, response.headers.items()
+    except Exception as e:
+        return jsonify({"error": f"Error in proxying request: {str(e)}"}), 500
+
+@app.route('/view_prepared_data', methods=['GET'])
+def view_prepared_data():
+    try:
+        # Proxy the request to the ml_service on port 5002
+        response = requests.get(f"{ML_SERVICE_URL}/view_prepared_data")
+        
+        # Forward the response from the ml_service
+        return response.content, response.status_code, response.headers.items()
+    except Exception as e:
+        return jsonify({"error": f"Error in proxying request: {str(e)}"}), 500
+
 
 # Debug function to check API connection
 def check_api_connection():
