@@ -60,7 +60,7 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
 @app.route('/')
 def index():
     tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
-    return render_template('react_home.html')
+    return render_template('index.html')
 
 
 def decode_secret(secret):
