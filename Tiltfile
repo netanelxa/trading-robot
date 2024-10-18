@@ -34,7 +34,7 @@ docker_build(
 # Create and manage the Alpaca secrets
 local_resource(
   'create-alpaca-secrets',
-  cmd='kubectl create secret generic alpaca-secrets --from-literal=api-key-id=$APCA_API_KEY_ID --from-literal=api-secret-key=$APCA_API_SECRET_KEY --from-literal=api-key-avantage=$ALPHA_VANTAGE_API_KEY --dry-run=client -o yaml | kubectl apply -f -',
+  cmd='kubectl create secret generic alpaca-secrets --from-literal=api-key-id=$APCA_API_KEY_ID --from-literal=api-secret-key=$APCA_API_SECRET_KEY --from-literal=api-key-avantage=$ALPHA_VANTAGE_API_KEY --from-literal=tg-bot-token=$TELEGRAM_BOT_TOKEN --from-literal=tg-chat-1=$TELEGRAM_CHAT_ID1   --from-literal=admin-pass=$ADMIN_PASSWORD --from-literal=app-key=$APP_KEY --dry-run=client -o yaml | kubectl apply -f -',
   deps=['.env']
 )
 

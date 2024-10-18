@@ -7,7 +7,8 @@ numpy==1.23.0
 alpaca-trade-api==3.2.0
 pandas==2.0.0
 ta==0.11.0
-
+yfinance
+beautifulsoup4
 # web:
 flask==3.0.3
 requests
@@ -19,3 +20,4 @@ opentelemetry-semantic-conventions==0.47b0
 opentelemetry-sdk==1.26.0
 opentelemetry-exporter-otlp-proto-http==1.26.0
 opentelemetry-exporter-otlp==1.26.0
+flask-cors==3.0.10

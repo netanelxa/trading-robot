@@ -82,10 +82,10 @@
     </tr>
     {% for stock in top_gainers %}
     <tr>
-        <td data-label="Symbol">{{ stock.ticker }}</td>
-        <td data-label="Price">${{ stock.price }}</td>
-        <td data-label="Change" class="positive">${{ stock.change_amount }}</td>
-        <td data-label="Change Percent" class="positive">{{ stock.change_percentage }}</td>
+        <td data-label="Symbol">{{ stock.Symbol }}</td>
+        <td data-label="Price">${{ "%.2f"|format(stock.Price) }}</td>
+        <td data-label="Change" class="positive">${{ "%.2f"|format(stock.Change) }}</td>
+        <td data-label="Change Percent" class="positive">{{ "%.2f"|format(stock['% Change']) }}%</td>
     </tr>
     {% endfor %}
 </table>
@@ -100,10 +100,10 @@
     </tr>
     {% for stock in top_losers %}
     <tr>
-        <td data-label="Symbol">{{ stock.ticker }}</td>
-        <td data-label="Price">${{ stock.price }}</td>
-        <td data-label="Change" class="negative">${{ stock.change_amount }}</td>
-        <td data-label="Change Percent" class="negative">{{ stock.change_percentage }}</td>
+        <td data-label="Symbol">{{ stock.Symbol }}</td>
+        <td data-label="Price">${{ "%.2f"|format(stock.Price) }}</td>
+        <td data-label="Change" class="negative">${{ "%.2f"|format(stock.Change) }}</td>
+        <td data-label="Change Percent" class="negative">{{ "%.2f"|format(stock['% Change']) }}%</td>
     </tr>
     {% endfor %}
 </table>

@@ -1,7 +1,7 @@
 import os
 import time
 import pandas as pd
-from flask import Flask, render_template, request, json, jsonify,current_app, flash, redirect, url_for, Response
+from flask import Flask, render_template, request, json, jsonify,session,current_app, flash, redirect, url_for, Response
 from redis import Redis
 from fakeredis import FakeRedis
 from alpaca_trade_api.rest import REST, TimeFrame
@@ -16,8 +16,14 @@ import requests
 import threading
 import uuid
 import logging
+from bs4 import BeautifulSoup
+import yfinance as yf
+from functools import wraps
+import base64
+import ssl
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('APP_KEY')
 app.logger.setLevel(logging.INFO)
 
 
@@ -45,12 +51,20 @@ api = REST(key_id=os.environ.get('APCA_API_KEY_ID'),  # Corrected env var name
            base_url='https://paper-api.alpaca.markets',
            api_version='v2')
 
-
+# Telegram Bot configuration
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_API_URL = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}'
+TELEGRAM_CHAT_ID1 = os.environ.get('TELEGRAM_CHAT_ID1')  # You'll need to get this for each user
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD') 
 
 @app.route('/')
 def index():
     tracer.start_as_current_span(inspect.currentframe().f_code.co_name)
-    return render_template('index.html')
+    return render_template('react_home.html')
+
+
+def decode_secret(secret):
+    return base64.b64decode(secret).decode('utf-8')
 
 
 def fetch_and_process_data(symbol, start_date=None, end_date=None):
@@ -414,52 +428,121 @@ def export_data(symbol):
     )
 
 
+
 @app.route('/market-movers')
 def market_movers():
     try:
-        # Fetch top gainers and losers
-        url = f'https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey={ALPHA_VANTAGE_API_KEY}'
-        response = requests.get(url)
-        data = response.json()
+        # Scrape top gainers
+        gainers_url = "https://finance.yahoo.com/gainers?offset=0&count=100"
+        gainers_response = requests.get(gainers_url)
+        gainers_soup = BeautifulSoup(gainers_response.text, 'html.parser')
+        gainers_table = gainers_soup.find('table', {'class': 'W(100%)'})
+        
+        print(f"Gainers table found: {gainers_table is not None}")
+        
+        top_gainers = []
 
-        top_gainers = data.get('top_gainers', [])[:10]  # Limit to top 10
-        top_losers = data.get('top_losers', [])[:10]  # Limit to top 10
-        print(f"top_gainers {top_gainers}")
+        if gainers_table:
+            rows = gainers_table.find_all('tr')
+            app.logger.info(f"Number of rows in gainers table: {len(rows)}")
+            
+            for i, row in enumerate(rows[1:11], start=1):  # Skip header, get top 10
+                cols = row.find_all('td')
+                app.logger.info(f"Row {i}: Number of columns: {len(cols)}")
+                
+                if len(cols) >= 5:
+                    try:
+                        gainer = {
+                            'Symbol': cols[0].text,
+                            'Name': cols[1].text,
+                            'Price': float(cols[2].text.replace(',', '')),
+                            'Change': float(cols[3].text.replace('+', '')),
+                            '% Change': float(cols[4].text.replace('+', '').replace('%', ''))
+                        }
+                        top_gainers.append(gainer)
+                        app.logger.info(f"Added gainer: {gainer}")
+                    except ValueError as ve:
+                        app.logger.error(f"Error parsing row {i}: {ve}")
+                else:
+                    app.logger.warning(f"Row {i} has insufficient columns: {len(cols)}")
+        else:
+            app.logger.error("Gainers table not found")
+
+        # Scrape top losers (similar changes as above)
+        losers_url = "https://finance.yahoo.com/losers?offset=0&count=100"
+        losers_response = requests.get(losers_url)
+        losers_soup = BeautifulSoup(losers_response.text, 'html.parser')
+        losers_table = losers_soup.find('table', {'class': 'W(100%)'})
+        
+        app.logger.info(f"Losers table found: {losers_table is not None}")
+        
+        top_losers = []
+
+        if losers_table:
+            rows = losers_table.find_all('tr')
+            app.logger.info(f"Number of rows in losers table: {len(rows)}")
+            
+            for i, row in enumerate(rows[1:11], start=1):  # Skip header, get top 10
+                cols = row.find_all('td')
+                app.logger.info(f"Row {i}: Number of columns: {len(cols)}")
+                
+                if len(cols) >= 5:
+                    try:
+                        loser = {
+                            'Symbol': cols[0].text,
+                            'Name': cols[1].text,
+                            'Price': float(cols[2].text.replace(',', '')),
+                            'Change': float(cols[3].text.replace('-', '')),
+                            '% Change': float(cols[4].text.replace('-', '').replace('%', ''))
+                        }
+                        top_losers.append(loser)
+                        app.logger.info(f"Added loser: {loser}")
+                    except ValueError as ve:
+                        app.logger.error(f"Error parsing row {i}: {ve}")
+                else:
+                    app.logger.warning(f"Row {i} has insufficient columns: {len(cols)}")
+        else:
+            app.logger.error("Losers table not found")
+
         # Fetch data for some major stocks to check for 52-week highs/lows
-        symbols = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'FB', 'TSLA', 'JPM', 'JNJ', 'V', 'PG']
+        symbols = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'JPM', 'JNJ', 'V', 'PG']
         stocks_at_high = []
         stocks_at_low = []
 
         for symbol in symbols:
-            url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_VANTAGE_API_KEY}'
-            response = requests.get(url)
-            stock_data = response.json()
+            try:
+                stock = yf.Ticker(symbol)
+                info = stock.info
+                current_price = info['currentPrice']
+                fiftyTwoWeekHigh = info['fiftyTwoWeekHigh']
+                fiftyTwoWeekLow = info['fiftyTwoWeekLow']
 
-            if 'Time Series (Daily)' in stock_data:
-                daily_data = stock_data['Time Series (Daily)']
-                dates = list(daily_data.keys())
-                current_price = float(daily_data[dates[0]]['4. close'])
-                
-                # Check last 252 trading days (approximately 1 year)
-                high_52week = max(float(daily_data[date]['2. high']) for date in dates[:252])
-                low_52week = min(float(daily_data[date]['3. low']) for date in dates[:252])
-
-                if current_price >= high_52week * 0.99:  # Within 1% of 52-week high
+                if current_price >= fiftyTwoWeekHigh * 0.99:  # Within 1% of 52-week high
                     stocks_at_high.append({'symbol': symbol, 'price': current_price})
-                elif current_price <= low_52week * 1.01:  # Within 1% of 52-week low
+                    app.logger.info(f"Added {symbol} to stocks at high")
+                elif current_price <= fiftyTwoWeekLow * 1.01:  # Within 1% of 52-week low
                     stocks_at_low.append({'symbol': symbol, 'price': current_price})
+                    app.logger.info(f"Added {symbol} to stocks at low")
+            except Exception as e:
+                app.logger.error(f"Error processing {symbol}: {str(e)}")
+
+        app.logger.info(f"Number of top gainers: {len(top_gainers)}")
+        app.logger.info(f"Number of top losers: {len(top_losers)}")
+        app.logger.info(f"Number of stocks at 52-week high: {len(stocks_at_high)}")
+        app.logger.info(f"Number of stocks at 52-week low: {len(stocks_at_low)}")
 
         return render_template('market_movers.html', 
-                            top_gainers=top_gainers, 
-                            top_losers=top_losers, 
-                            stocks_at_high=stocks_at_high, 
-                            stocks_at_low=stocks_at_low)
+                               top_gainers=top_gainers, 
+                               top_losers=top_losers, 
+                               stocks_at_high=stocks_at_high, 
+                               stocks_at_low=stocks_at_low)
     
-    except requests.RequestException as e:
-            # Log the error
-            app.logger.error(f"Error fetching data from Alpha Vantage: {str(e)}")
-            # Return an error page
-            return render_template('error.html', message="Unable to fetch market data. Please try again later."), 500
+    except Exception as e:
+        # Log the error
+        app.logger.error(f"Error fetching market data: {str(e)}")
+        # Return an error page
+        return render_template('error.html', message="Unable to fetch market data. Please try again later."), 500
+
 
 def train_ml_model(ticker=None, model_type='rf'):
     if ticker:
@@ -609,6 +692,116 @@ def check_api_connection():
     except Exception as e:
         print(f"Error connecting to Alpaca API: {str(e)}")
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/account')
+@login_required
+def account():
+    account = api.get_account()
+    positions = api.list_positions()
+    return render_template('account.html', account=account, positions=positions)
+
+@app.route('/buy', methods=['POST'])
+@login_required
+def buy_stock():
+    symbol = request.form['symbol']
+    qty = request.form['quantity']
+    try:
+        order = api.submit_order(symbol=symbol, qty=qty, side='buy', type='market', time_in_force='gtc')
+        message = f"Buy order placed for {qty} shares of {symbol}"
+        send_telegram_message(TELEGRAM_CHAT_ID1, message)
+        app.logger.info(f"Buy order placed: {message}")
+        return jsonify({"message": message}), 200
+    except Exception as e:
+        error_message = f"Error placing buy order: {str(e)}"
+        send_telegram_message(TELEGRAM_CHAT_ID1, error_message)
+        app.logger.error(f"Buy order error: {error_message}")
+        return jsonify({"error": error_message}), 400
+
+@app.route('/sell', methods=['POST'])
+@login_required
+def sell_stock():
+    symbol = request.form['symbol']
+    qty = request.form['quantity']
+    try:
+        order = api.submit_order(symbol=symbol, qty=qty, side='sell', type='market', time_in_force='gtc')
+        message = f"Sell order placed for {qty} shares of {symbol}"
+        send_telegram_message(TELEGRAM_CHAT_ID1, message)
+        app.logger.info(f"Sell order placed: {message}")
+        return jsonify({"message": message}), 200
+    except Exception as e:
+        error_message = f"Error placing sell order: {str(e)}"
+        send_telegram_message(TELEGRAM_CHAT_ID1, error_message)
+        app.logger.error(f"Sell order error: {error_message}")
+        return jsonify({"error": error_message}), 400
+
+@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
+def handle_telegram_update():
+    update = request.json
+    app.logger.info(f"Received Telegram update: {update}")
+
+    if 'message' in update:
+        chat_id = update['message']['chat']['id']
+        text = update['message'].get('text', '')
+
+        app.logger.info(f"Received message: '{text}' from chat_id: {chat_id}")
+
+        if text.lower() == '/start':
+            send_telegram_message(chat_id, "Welcome to your Stock Trading Bot! Use /account to see your account details.")
+        elif text.lower() == '/account':
+            try:
+                account = api.get_account()
+                message = f"Account Balance: ${account.cash}\nPortfolio Value: ${account.portfolio_value}"
+                send_telegram_message(chat_id, message)
+            except Exception as e:
+                app.logger.error(f"Error fetching account details: {str(e)}")
+                send_telegram_message(chat_id, "Sorry, there was an error fetching your account details.")
+        else:
+            send_telegram_message(chat_id, "Sorry, I don't understand that command. Try /start or /account")
+
+    return '', 200
+
+def send_telegram_message(chat_id, message):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": message
+        }
+        response = requests.post(url, json=payload)
+        app.logger.info(f"Telegram notification sent: {response.json()}")
+        return response.json()
+    except Exception as e:
+        app.logger.error(f"Error sending Telegram notification: {str(e)}")
+        return None
+
+
+
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        if request.form['password'] == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            return redirect(request.args.get('next') or url_for('account'))
+        else:
+            return render_template('login.html', error='Invalid password')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login'))
+
+
+
 # Call this function when your app starts
 check_api_connection()
 
@@ -624,4 +817,13 @@ def test_ml_service():
         return jsonify({"error": f"Error connecting to ML service: {str(e)}"}), 500
 
 if __name__ == "__main__":
+    # context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    # context.minimum_version = ssl.TLSVersion.TLSv1_2
+    # context.maximum_version = ssl.TLSVersion.TLSv1_3
+    # context.set_ciphers('ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384')
+    # context.load_cert_chain('cert.pem', 'key.pem')
+    webhook_url = f"https://172.232.199.44/{TELEGRAM_BOT_TOKEN}"
+    set_webhook_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}"
+    response = requests.get(set_webhook_url)
+    app.logger.info(f"Webhook set response: {response.json()}")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)),debug=True)
