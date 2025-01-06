@@ -140,21 +140,21 @@ def update_cache(symbol, new_data):
 
 
 def get_stock_data(symbol):
-    end_date = datetime.now().date() - timedelta(days=1)
+    end_date = datetime.now().date() - timedelta(days=1)  # Use yesterday's date
     cached_data = redis.get(symbol)
     
     if cached_data:
         cached_data = json.loads(cached_data)
         df = pd.DataFrame.from_dict(cached_data, orient='index')
         df.index = pd.to_datetime(df.index)
-        last_cached_date = df.index.max().date()
-        
+        last_cached_date = df.index.max().date()        
         if last_cached_date < end_date:
             # Fetch all data again to ensure proper calculations
             start_date = end_date - timedelta(days=DAYS_TO_FETCH)
             data = fetch_and_process_data(symbol, start_date, end_date)
             if data:
                 df = pd.DataFrame.from_dict(data, orient='index')
+
                 update_cache(symbol, df.to_dict(orient='index'))
     else:
         start_date = end_date - timedelta(days=DAYS_TO_FETCH)
@@ -164,6 +164,7 @@ def get_stock_data(symbol):
             update_cache(symbol, df.to_dict(orient='index'))
         else:
             return pd.DataFrame()
+
     
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
