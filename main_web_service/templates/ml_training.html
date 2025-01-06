@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}ML Model Training{% endblock %}
+
+{% block additional_styles %}
+<style>
+    #trainingForm { background: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+    label { display: block; margin-bottom: 5px; }
+    input, select { width: 100%; padding: 8px; margin-bottom: 10px; }
+    button { display: block; width: 100%; padding: 10px; background: #333; color: #fff; border: none; cursor: pointer; }
+    button:hover { background: #555; }
+    #results { margin-top: 20px; background: #e9e9e9; padding: 20px; border-radius: 5px; }
+    #progressBar { width: 100%; background-color: #f3f3f3; }
+    #progressBar div { width: 0%; height: 30px; background-color: #4CAF50; text-align: center; line-height: 30px; color: white; }
+    #trainingStatus { margin-top: 10px; font-weight: bold; }
+    #debugInfo { margin-top: 20px; font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+
+
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>ML Model Training</h1>
+<p>Current Model: <span id="currentModel">Loading...</span></p>
+
+<form id="trainingForm">
+    <label for="symbol">Stock Symbol:</label>
+    <select id="symbol" name="symbol" required>
+        <option value="">Select a stock</option>
+    </select>
+    <label for="modelType">ML Model Type:</label>
+    <select id="modelType" name="modelType">
+        <option value="rf">Random Forest</option>
+        <option value="lr">Linear Regression</option>
+        <option value="svr">Support Vector Regression</option>
+        <option value="xgb">XGBoost</option>
+        <option value="lstm">LSTM</option>
+    </select>
+    
+    <button type="submit">Train Model</button>
+</form>
+
+
+
+<div id="trainingStatus"></div>
+
+<div id="progressBar" style="display: none;">
+    <div></div>
+</div>
+
+<div id="results">
+    <h2>Training Results</h2>
+    <p id="resultText">No results yet. Train a model to see results.</p>
+</div>
+<div id="debugInfo"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+<script>
+   // Fetch current model type when page loads
+
+
+function logDebugInfo(message) {
+    console.log(message);
+    const debugInfoElement = document.getElementById('debugInfo');
+    debugInfoElement.textContent += message + '\n';
+    debugInfoElement.scrollTop = debugInfoElement.scrollHeight;
+}
+axios.get('/get_current_model')
+    .then(function (response) {
+        document.getElementById('currentModel').textContent = response.data.model_type || 'None';
+    })
+    .catch(function (error) {
+        console.error('Error fetching current model:', error);
+    });
+
+document.getElementById('trainingForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const symbol = document.getElementById('symbol').value;
+    const modelType = document.getElementById('modelType').value;
+    
+    if (!symbol) {
+        alert('Please enter a stock symbol');
+        return;
+    }
+    
+    document.getElementById('trainingStatus').textContent = 'Initiating training...';
+    document.getElementById('progressBar').style.display = 'block';
+    document.querySelector('#progressBar div').style.width = '0%';
+    document.querySelector('#progressBar div').textContent = '0%';
+    logDebugInfo(`Initiating training for symbol: ${symbol}, model type: ${modelType}`);
+
+    axios.post('/train_model', {
+        symbol: symbol,
+        model_type: modelType
+    })
+    .then(function (response) {
+        const taskId = response.data.task_id;
+        logDebugInfo(`Training initiated. Task ID: ${taskId}`);
+        pollTrainingStatus(taskId);
+    })
+    .catch(function (error) {
+        document.getElementById('trainingStatus').textContent = `Error: ${error.response.data.error}`;
+        logDebugInfo(`Error initiating training: ${errorMessage}`);
+
+    });
+});
+
+
+function pollTrainingStatus(taskId) {
+    let progress = 0;
+    const statusElement = document.getElementById('trainingStatus');
+    const progressBarElement = document.querySelector('#progressBar div');
+    const resultTextElement = document.getElementById('resultText');
+    
+    function updateProgress() {
+        progress += 5;
+        if (progress > 90) progress = 90;
+        progressBarElement.style.width = progress + '%';
+        progressBarElement.textContent = progress + '%';
+    }
+
+    function checkStatus() {
+        logDebugInfo(`Checking status for task ${taskId}...`);
+        axios.get(`/training_status/${taskId}`)
+            .then(function (response) {
+                logDebugInfo(`Received response: ${JSON.stringify(response.data, null, 2)}`);
+                updateProgress();
+                if (response.data && response.data.status) {
+                    if (response.data.status === 'completed') {
+                        statusElement.textContent = 'Training completed!';
+                        progressBarElement.style.width = '100%';
+                        progressBarElement.textContent = '100%';
+                        if (response.data.result && !response.data.result.error) {
+                            displayResults(response.data.result);
+                        } else {
+                            const errorMessage = response.data.result ? response.data.result.error : 'Unknown error occurred';
+                            logDebugInfo(`Error in result: ${errorMessage}`);
+                            statusElement.textContent = `Training failed: ${errorMessage}`;
+                            statusElement.className = 'error';
+                        }
+                    } else if (response.data.status === 'failed') {
+                        statusElement.textContent = `Training failed: ${response.data.error || 'Unknown error'}`;
+                        statusElement.className = 'error';
+                    } else if (response.data.status === 'in_progress') {
+                        statusElement.textContent = 'Training in progress...';
+                        setTimeout(checkStatus, 2000);
+                    } else {
+                        statusElement.textContent = `Unexpected status: ${response.data.status}`;
+                        statusElement.className = 'error';
+                    }
+                } else {
+                    logDebugInfo('Error: Response data is not in the expected format.');
+                    statusElement.textContent = 'Error: Unexpected response format';
+                    statusElement.className = 'error';
+                }
+            })
+            .catch(function (error) {
+                const errorMessage = error.response ? error.response.data.message : error.message;
+                logDebugInfo(`Error checking training status: ${errorMessage}`);
+                statusElement.textContent = `Error checking training status: ${errorMessage}`;
+                statusElement.className = 'error';
+                resultTextElement.textContent = 'An error occurred while checking the training status. Please try again later.';
+            });
+    }
+
+    checkStatus();
+}
+
+function displayResults(result) {
+    logDebugInfo(`Displaying results: ${JSON.stringify(result, null, 2)}`);
+    let resultText = `Training completed: ${result.message || 'No message provided'}\n\n`;
+    resultText += `Model Type: ${result.model_type || 'Unknown'}\n`;
+    resultText += `Metrics:\n`;
+    if (result.metrics) {
+        for (let [key, value] of Object.entries(result.metrics)) {
+            resultText += `  ${key}: ${typeof value === 'number' ? value.toFixed(4) : value}\n`;
+        }
+    } else {
+        resultText += '  No metrics available\n';
+    }
+    if (result.feature_importance) {
+        resultText += `\nFeature Importance:\n`;
+        for (let [feature, importance] of Object.entries(result.feature_importance)) {
+            resultText += `  ${feature}: ${typeof importance === 'number' ? (importance * 100).toFixed(2) : importance}%\n`;
+        }
+    }
+    document.getElementById('resultText').textContent = resultText;
+    document.getElementById('currentModel').textContent = result.model_type || 'Unknown';
+
+    // Add links for downloading and viewing prepared data
+    const resultsElement = document.getElementById('results');
+    resultsElement.innerHTML += '<br><a href="/download_prepared_data" download>Download Prepared Data</a>';
+    resultsElement.innerHTML += '<br><a href="/view_prepared_data" target="_blank">View Prepared Data</a>';
+
+}
+
+function populateStockDropdown() {
+    axios.get('/stocks', {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function (response) {
+        const select = document.getElementById('symbol');
+        response.data.forEach(function(stock) {
+            const option = document.createElement('option');
+            option.value = stock;
+            option.textContent = stock;
+            select.appendChild(option);
+        });
+    })
+    .catch(function (error) {
+        console.error('Error fetching watched stocks:', error);
+        logDebugInfo(`Error fetching watched stocks: ${error.message}`);
+    });
+}
+document.addEventListener('DOMContentLoaded', function() {
+    populateStockDropdown();
+    logDebugInfo('Page loaded. Initializing...');
+});
+</script>
+{% endblock %}

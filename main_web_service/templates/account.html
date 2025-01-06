@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Account Management{% endblock %}
+
+{% block additional_styles %}
+<style>
+    .account-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+    }
+    h1, h2 {
+        color: #333;
+    }
+    .account-info {
+        background-color: #f0f0f0;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .account-info p {
+        margin: 10px 0;
+        font-size: 18px;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+    }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 12px;
+        text-align: left;
+    }
+    th {
+        background-color: #4CAF50;
+        color: white;
+    }
+    tr:nth-child(even) {
+        background-color: #f2f2f2;
+    }
+    .trade-form {
+        background-color: #f9f9f9;
+        border-radius: 5px;
+        padding: 20px;
+    }
+    .trade-form input[type="text"],
+    .trade-form input[type="number"] {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+    .trade-form button {
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 10px;
+    }
+    .trade-form button:hover {
+        background-color: #45a049;
+    }
+    @media screen and (max-width: 600px) {
+        table, tr, td {
+            display: block;
+        }
+        tr {
+            margin-bottom: 10px;
+        }
+        td {
+            border: none;
+            position: relative;
+            padding-left: 50%;
+        }
+        td:before {
+            content: attr(data-label);
+            position: absolute;
+            left: 6px;
+            width: 45%;
+            padding-right: 10px;
+            white-space: nowrap;
+            font-weight: bold;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="account-container">
+    <h1>Account Management</h1>
+    
+    <div class="account-info">
+        <h2>Account Information</h2>
+        <p>Cash Balance: ${{ "{:,.2f}".format(account.cash|float) }}</p>
+        <p>Portfolio Value: ${{ "{:,.2f}".format(account.portfolio_value|float) }}</p>
+    </div>
+
+    <h2>Open Positions</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Quantity</th>
+                <th>Current Price</th>
+                <th>Market Value</th>
+                <th>Profit/Loss</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for position in positions %}
+            <tr>
+                <td data-label="Symbol">{{ position.symbol }}</td>
+                <td data-label="Quantity">{{ position.qty }}</td>
+                <td data-label="Current Price">${{ "{:,.2f}".format(position.current_price|float) }}</td>
+                <td data-label="Market Value">${{ "{:,.2f}".format(position.market_value|float) }}</td>
+                <td data-label="Profit/Loss">${{ "{:,.2f}".format(position.unrealized_pl|float) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="trade-form">
+        <h2>Trade</h2>
+        <form id="tradeForm">
+            <input type="text" id="symbol" placeholder="Stock Symbol" required>
+            <input type="number" id="quantity" placeholder="Quantity" required>
+            <button type="button" onclick="submitTrade('buy')">Buy</button>
+            <button type="button" onclick="submitTrade('sell')">Sell</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function submitTrade(action) {
+    const symbol = document.getElementById('symbol').value;
+    const quantity = document.getElementById('quantity').value;
+    fetch(`/${action}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `symbol=${symbol}&quantity=${quantity}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        location.reload(); // Refresh the page to show updated account info
+    })
+    .catch(error => alert('Error: ' + error));
+}
+</script>
+{% endblock %}

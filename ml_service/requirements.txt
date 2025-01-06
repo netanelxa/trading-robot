@@ -1,0 +1,7 @@
+flask
+pandas
+numpy
+scikit-learn
+xgboost
+tensorflow
+redis==4.3.4

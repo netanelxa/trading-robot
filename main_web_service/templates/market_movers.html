@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Market Movers{% endblock %}
+
+{% block additional_styles %}
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    h1 {
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    h2 {
+        color: #34495e;
+        margin-top: 30px;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+    }
+    th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+        color: #2c3e50;
+    }
+    tr:hover {
+        background-color: #f5f5f5;
+    }
+    .positive {
+        color: #27ae60;
+    }
+    .negative {
+        color: #c0392b;
+    }
+    @media screen and (max-width: 600px) {
+        table, tr, td {
+            display: block;
+        }
+        tr {
+            margin-bottom: 15px;
+        }
+        td {
+            border: none;
+            position: relative;
+            padding-left: 50%;
+        }
+        td:before {
+            content: attr(data-label);
+            position: absolute;
+            left: 6px;
+            width: 45%;
+            padding-right: 10px;
+            white-space: nowrap;
+            font-weight: bold;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Market Movers</h1>
+
+<h2>Top Gainers</h2>
+<table>
+    <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>Change</th>
+        <th>Change Percent</th>
+    </tr>
+    {% for stock in top_gainers %}
+    <tr>
+        <td data-label="Symbol">{{ stock.Symbol }}</td>
+        <td data-label="Price">${{ "%.2f"|format(stock.Price) }}</td>
+        <td data-label="Change" class="positive">${{ "%.2f"|format(stock.Change) }}</td>
+        <td data-label="Change Percent" class="positive">{{ "%.2f"|format(stock['% Change']) }}%</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Top Losers</h2>
+<table>
+    <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>Change</th>
+        <th>Change Percent</th>
+    </tr>
+    {% for stock in top_losers %}
+    <tr>
+        <td data-label="Symbol">{{ stock.Symbol }}</td>
+        <td data-label="Price">${{ "%.2f"|format(stock.Price) }}</td>
+        <td data-label="Change" class="negative">${{ "%.2f"|format(stock.Change) }}</td>
+        <td data-label="Change Percent" class="negative">{{ "%.2f"|format(stock['% Change']) }}%</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Stocks at 52-Week High</h2>
+<table>
+    <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+    </tr>
+    {% for stock in stocks_at_high %}
+    <tr>
+        <td data-label="Symbol">{{ stock.symbol }}</td>
+        <td data-label="Price">${{ "%.2f"|format(stock.price) }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Stocks at 52-Week Low</h2>
+<table>
+    <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+    </tr>
+    {% for stock in stocks_at_low %}
+    <tr>
+        <td data-label="Symbol">{{ stock.symbol }}</td>
+        <td data-label="Price">${{ "%.2f"|format(stock.price) }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

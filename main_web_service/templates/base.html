@@ -100,8 +100,12 @@
         <a href="{{ url_for('index') }}" class="home-button">Home</a>
         <h2>Tools</h2>
         <ul>
+            <li><a href="{{ url_for('account') }}">Manage account</a></li>
             <li><a href="{{ url_for('add_stock') }}">Add a Stock to Track</a></li>
             <li><a href="{{ url_for('list_stocks') }}">View Tracked Stocks</a></li>
+            <li><a href="{{ url_for('market_movers') }}">Market Movers</a></li>
+            <li><a href="{{ url_for('ml_training') }}">ML Training</a></li>
+
             <!-- Add more tools here as needed -->
         </ul>
     </div>

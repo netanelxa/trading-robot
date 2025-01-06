@@ -3,13 +3,15 @@ redis==4.3.4
 fakeredis==2.24.1
 
 # numerical
-numpy==1.19.5
+numpy==1.23.0
 alpaca-trade-api==3.2.0
-pandas
+pandas==2.0.0
 ta==0.11.0
-
+yfinance
+beautifulsoup4
 # web:
 flask==3.0.3
+requests
 opentelemetry-api==1.26.0
 opentelemetry-distro==0.47b0
 opentelemetry-instrumentation-flask==0.47b0
@@ -18,3 +20,4 @@ opentelemetry-semantic-conventions==0.47b0
 opentelemetry-sdk==1.26.0
 opentelemetry-exporter-otlp-proto-http==1.26.0
 opentelemetry-exporter-otlp==1.26.0
+flask-cors==3.0.10

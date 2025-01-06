@@ -20,6 +20,8 @@ spec:
         ports:
         - containerPort: 5000
         env:
+        - name: ML_SERVICE_URL
+          value: "http://ml-service:5002"
         - name: REDIS_HOST
           value: "redis"
         - name: REDIS_PORT
@@ -38,6 +40,31 @@ spec:
             secretKeyRef:
               name: alpaca-secrets
               key: api-secret-key
+        - name: ALPHA_VANTAGE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: api-key-avantage
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: tg-bot-token
+        - name: TELEGRAM_CHAT_ID1
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: tg-chat-1
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: admin-pass
+        - name: APP_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alpaca-secrets
+              key: app-key
         resources:
           requests:
             cpu: 100m
@@ -55,7 +82,11 @@ metadata:
 spec:
   type: LoadBalancer
   ports:
-    - port: 80
+    - name: http
+      port: 80
+      targetPort: 5000
+    - name: https
+      port: 443
       targetPort: 5000
   selector:
     app: trading-robot
