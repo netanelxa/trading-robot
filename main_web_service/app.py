@@ -140,7 +140,7 @@ def update_cache(symbol, new_data):
 
 
 def get_stock_data(symbol):
-    end_date = datetime.now().date() - timedelta(days=1)  # Use yesterday's date
+    end_date = datetime.now().date() - timedelta(days=1)
     cached_data = redis.get(symbol)
     
     if cached_data:
@@ -148,12 +148,13 @@ def get_stock_data(symbol):
         df = pd.DataFrame.from_dict(cached_data, orient='index')
         df.index = pd.to_datetime(df.index)
         last_cached_date = df.index.max().date()
+        
         if last_cached_date < end_date:
-            start_date = last_cached_date + timedelta(days=1)
-            new_data = fetch_and_process_data(symbol, start_date, end_date)
-            if new_data:
-                new_df = pd.DataFrame.from_dict(new_data, orient='index')
-                df = pd.concat([df, new_df])
+            # Fetch all data again to ensure proper calculations
+            start_date = end_date - timedelta(days=DAYS_TO_FETCH)
+            data = fetch_and_process_data(symbol, start_date, end_date)
+            if data:
+                df = pd.DataFrame.from_dict(data, orient='index')
                 update_cache(symbol, df.to_dict(orient='index'))
     else:
         start_date = end_date - timedelta(days=DAYS_TO_FETCH)
@@ -162,7 +163,7 @@ def get_stock_data(symbol):
             df = pd.DataFrame.from_dict(data, orient='index')
             update_cache(symbol, df.to_dict(orient='index'))
         else:
-            return pd.DataFrame()  # Return an empty DataFrame if no data was fetched
+            return pd.DataFrame()
     
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
