@@ -1,4 +1,6 @@
+# -*- mode: Python -*-
 load('ext://dotenv', 'dotenv')
+load("ext://helm_resource", "helm_repo", "helm_resource")
 dotenv()
 
 # Build and watch the trading robot application
@@ -6,14 +8,14 @@ local_resource(
   'trading-robot-bin',
   'echo running trading-robot-bin',
   deps=['./main_web_service'],
-  labels=['build-stuff']
+  labels=['builds']
 )
 
 # Build the Docker image for trading robot
 docker_build(
     "netanelxa/trading-robot:latest",
     "./main_web_service",
-    network='host'
+    network='host',
 )
 
 # Use the pre-built image from Docker Hub for ML service
@@ -28,7 +30,7 @@ docker_build(
 docker_build(
     "netanelxa/ml-service:latest",
     "./ml_service",  # Adjust this path to where your ML service code is located
-    network='host'
+    network='host',
 )
 
 # Create and manage the Alpaca secrets
@@ -52,5 +54,45 @@ k8s_resource(
 k8s_resource(
   'ml-service',
   port_forwards='5002:5002',
-  resource_deps=['create-alpaca-secrets']
+  resource_deps=['create-alpaca-secrets'],
+  labels=['trading-robot'],
+)
+
+##### OTEL #####
+
+helm_repo(
+    "open-telemetry",
+    "https://open-telemetry.github.io/opentelemetry-helm-charts",
+    resource_name="opentelemetry-repo",
+    labels=["opentelemetry"],
+)
+
+helm_resource(
+  "opentelemetry-operator",
+  "open-telemetry/opentelemetry-operator",
+  namespace="opentelemetry-operator-system",
+  flags=[
+      '--create-namespace',
+      '--namespace=opentelemetry-operator-system',
+      '--set=manager.collectorImage.repository=otel/opentelemetry-collector-k8s',
+      '--set=admissionWebhooks.certManager.enabled=false',
+      '--set=admissionWebhooks.autoGenerateCert.enabled=true',
+  ],
+  labels=["opentelemetry"],
+)
+
+k8s_yaml(kustomize('kubernetes/otel'))
+
+helm_resource(
+    "my-opentelemetry-collector",
+    "open-telemetry/opentelemetry-collector",
+    flags=[
+        '--values=kubernetes/otel/values.yaml',
+        '--set=image.repository=otel/opentelemetry-collector-k8s',
+        '--set=mode=deployment',
+    ],
+      deps=[
+          "kubernetes/otel/values.yaml",
+      ],
+    labels=["opentelemetry"],
 )
