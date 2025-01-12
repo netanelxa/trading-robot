@@ -23,7 +23,17 @@ EXPOSE 5000
 # Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_RUN_HOST=0.0.0.0
+# ENV FLASK_DEBUG=1
+
+# ENV OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
+ENV OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=my-opentelemetry-collector.default.svc.cluster.local:4317
+# ENV OTEL_TRACES_EXPORTER=console,otlp
+# ENV OTEL_SERVICENAME="hahaha"
+# ENV OTEL_PYTHON_LOG_CORRELATION=true
+# ENV OTEL_PYTHON_LOG_FORMAT="%(msg)s [span_id=%(span_id)s]"
+# ENV OTEL_PYTHON_LOG_LEVEL=debug
 ENV OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
 
 # Command to run the application
-CMD [ "opentelemetry-instrument", "--traces_exporter",  "console", "--service_name", "web-ui", "flask", "run" ]
+CMD [ "opentelemetry-instrument", "--traces_exporter", "console", "--log_level", "debug", "--service_name", "web-ui", "flask", "run" ]
+# CMD [ "opentelemetry-instrument", "flask", "run" ]

@@ -88,8 +88,9 @@ helm_resource(
     "open-telemetry/opentelemetry-collector",
     flags=[
         '--values=kubernetes/otel/values.yaml',
-        '--set=image.repository=otel/opentelemetry-collector-k8s',
-        '--set=mode=deployment',
+        # moved below to values.yaml above ^
+        # '--set=image.repository=otel/opentelemetry-collector-k8s',
+        # '--set=mode=deployment',
     ],
       deps=[
           "kubernetes/otel/values.yaml",
