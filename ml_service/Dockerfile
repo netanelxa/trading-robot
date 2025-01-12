@@ -16,4 +16,5 @@ COPY ml_service.py .
 
 EXPOSE 5002
 
+# TODO: add agent instrumentation like in main-service
 CMD ["python", "ml_service.py"]
